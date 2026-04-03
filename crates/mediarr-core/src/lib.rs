@@ -15,8 +15,7 @@ pub mod types;
 
 pub mod renamer;
 
-// These modules will be added by subsequent plans:
-// pub mod scanner;
+pub mod scanner;
 
 pub use config::Config;
 pub use error::{MediError, Result};
@@ -25,5 +24,6 @@ pub use history::HistoryDb;
 pub use parser::{parse_filename, parse_with_context};
 pub use subtitle::SubtitleDiscovery;
 pub use renamer::{RenamePlan, RenamePlanEntry, Renamer};
+pub use scanner::Scanner;
 pub use template::TemplateEngine;
 pub use types::*;
