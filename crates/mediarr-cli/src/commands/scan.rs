@@ -43,7 +43,7 @@ pub async fn execute(args: ScanArgs) -> anyhow::Result<()> {
 
     if args.json {
         formatter.scan_json(&display_results);
-    } else if args.verbose {
+    } else if args.tree {
         formatter.scan_verbose(&display_results);
     } else {
         formatter.scan_table(&display_results);

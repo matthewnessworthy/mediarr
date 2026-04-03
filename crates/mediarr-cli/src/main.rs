@@ -60,8 +60,8 @@ pub struct ScanArgs {
     #[arg(long)]
     pub json: bool,
     /// Show verbose tree view with subtitle details
-    #[arg(long)]
-    pub verbose: bool,
+    #[arg(long = "tree")]
+    pub tree: bool,
 }
 
 /// Arguments for the rename command.
