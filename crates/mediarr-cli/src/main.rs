@@ -158,18 +158,9 @@ async fn main() {
         Commands::Rename(args) => commands::rename::execute(args).await,
         Commands::History(args) => commands::history::execute(args),
         Commands::Undo(args) => commands::undo::execute(args),
-        Commands::Watch(_args) => {
-            eprintln!("Watch command not yet implemented");
-            Ok(())
-        }
-        Commands::Config(_args) => {
-            eprintln!("Config command not yet implemented");
-            Ok(())
-        }
-        Commands::Review(_args) => {
-            eprintln!("Review command not yet implemented");
-            Ok(())
-        }
+        Commands::Watch(args) => commands::watch::execute(args).await,
+        Commands::Config(args) => commands::config::execute(args),
+        Commands::Review(args) => commands::review::execute(args),
     };
 
     if let Err(e) = result {
