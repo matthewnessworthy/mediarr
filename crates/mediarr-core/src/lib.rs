@@ -17,6 +17,8 @@ pub mod renamer;
 
 pub mod scanner;
 
+pub mod watcher;
+
 pub use config::Config;
 pub use error::{MediError, Result};
 pub use fs_util::{path_to_utf8, safe_move};
@@ -27,6 +29,7 @@ pub use renamer::{RenamePlan, RenamePlanEntry, Renamer};
 pub use scanner::Scanner;
 pub use template::TemplateEngine;
 pub use types::*;
+pub use watcher::WatcherManager;
 
 // Explicit watcher type re-exports for downstream convenience
 pub use types::{
