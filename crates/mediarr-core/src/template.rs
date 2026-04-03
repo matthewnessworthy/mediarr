@@ -5,12 +5,311 @@
 //! validates templates per media type, and sanitizes output paths for
 //! cross-platform compatibility.
 
-// Implementation will be added in the GREEN phase.
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use regex::Regex;
+
+use crate::error::{MediError, Result};
+use crate::types::{MediaInfo, MediaType, TemplateWarning};
+
+/// Known template variable names.
+const KNOWN_VARIABLES: &[&str] = &[
+    "title",
+    "year",
+    "season",
+    "episode",
+    "ext",
+    "resolution",
+    "video_codec",
+    "audio_codec",
+    "source",
+    "release_group",
+    "language",
+];
+
+/// Stateless template engine for rendering naming templates into output paths.
+///
+/// Templates use `{variable}` syntax with optional modifiers:
+/// - `{title}` — raw value
+/// - `{season:02}` — zero-padded to 2 digits
+/// - `{episode:02}` — zero-padded; multi-episode produces `05E06E07`
+pub struct TemplateEngine;
+
+impl TemplateEngine {
+    /// Create a new template engine instance.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Render a template string against parsed media info, producing an output path.
+    ///
+    /// Template variables are replaced with values from `info`. Path separators
+    /// (`/`) split the template into path components, each sanitized independently.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MediError::UnknownVariable` if the template references a variable
+    /// not in the known set. Returns `MediError::InvalidModifier` if a format
+    /// modifier is unrecognised.
+    pub fn render(&self, template: &str, info: &MediaInfo) -> Result<PathBuf> {
+        let vars = build_vars(info);
+        let re = Regex::new(r"\{(\w+)(?::(\w+))?\}").expect("template regex is valid");
+
+        // We need to process the template, replacing each variable match.
+        // Use a manual scan to return errors on unknown variables.
+        let mut result = String::new();
+        let mut last_end = 0;
+
+        for caps in re.captures_iter(template) {
+            let full_match = caps.get(0).expect("match exists");
+            let var_name = &caps[1];
+            let modifier = caps.get(2).map(|m| m.as_str());
+
+            // Check known variable
+            if !KNOWN_VARIABLES.contains(&var_name) {
+                return Err(MediError::UnknownVariable {
+                    name: var_name.to_string(),
+                });
+            }
+
+            // Append text before this match
+            result.push_str(&template[last_end..full_match.start()]);
+
+            // Resolve value
+            let raw_value = if var_name == "episode" {
+                resolve_episode(&info.episodes, modifier)?
+            } else {
+                let val = vars.get(var_name).cloned().unwrap_or_default();
+                match modifier {
+                    Some(m) => apply_modifier(&val, m)?,
+                    None => val,
+                }
+            };
+
+            result.push_str(&raw_value);
+            last_end = full_match.end();
+        }
+
+        // Append any trailing text
+        result.push_str(&template[last_end..]);
+
+        // Post-process: collapse consecutive dots
+        let result = collapse_dots(&result);
+
+        // Split on '/' into path components, sanitize each
+        let components: Vec<String> = result
+            .split('/')
+            .map(|c| sanitize_component(c))
+            .collect();
+
+        // Build PathBuf from components
+        let mut path = PathBuf::new();
+        for component in &components {
+            path.push(component);
+        }
+
+        Ok(path)
+    }
+
+    /// Validate a template string for the given media type.
+    ///
+    /// Returns warnings about missing recommended variables. Does NOT check
+    /// for unknown variables (that is `render`'s responsibility).
+    ///
+    /// Warnings do not block rendering — they are advisory.
+    pub fn validate(&self, template: &str, media_type: &MediaType) -> Vec<TemplateWarning> {
+        let re = Regex::new(r"\{(\w+)(?::(\w+))?\}").expect("template regex is valid");
+        let present: Vec<String> = re
+            .captures_iter(template)
+            .map(|c| c[1].to_string())
+            .collect();
+
+        let mut warnings = Vec::new();
+
+        // Required variables per media type
+        let required: Vec<(&str, &str)> = match media_type {
+            MediaType::Movie => vec![
+                ("title", "Movie templates should include {title}"),
+                ("year", "Movie templates should include {year}"),
+                ("ext", "Templates should include {ext} for file extension"),
+            ],
+            MediaType::Series => vec![
+                ("title", "Series templates should include {title}"),
+                ("season", "Series templates should include {season}"),
+                ("episode", "Series templates should include {episode}"),
+                ("ext", "Templates should include {ext} for file extension"),
+            ],
+            MediaType::Anime => vec![
+                ("title", "Anime templates should include {title}"),
+                ("season", "Anime templates should include {season}"),
+                ("episode", "Anime templates should include {episode}"),
+                ("ext", "Templates should include {ext} for file extension"),
+            ],
+        };
+
+        for (var, msg) in required {
+            if !present.iter().any(|p| p == var) {
+                warnings.push(TemplateWarning {
+                    variable: var.to_string(),
+                    message: msg.to_string(),
+                });
+            }
+        }
+
+        warnings
+    }
+}
+
+impl Default for TemplateEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Build a variable lookup map from MediaInfo (excludes episode — handled separately).
+fn build_vars(info: &MediaInfo) -> HashMap<String, String> {
+    let mut vars = HashMap::new();
+
+    vars.insert("title".to_string(), info.title.clone());
+    vars.insert(
+        "year".to_string(),
+        info.year.map(|y| y.to_string()).unwrap_or_default(),
+    );
+    vars.insert(
+        "season".to_string(),
+        info.season.map(|s| s.to_string()).unwrap_or_default(),
+    );
+    vars.insert("ext".to_string(), info.container.clone());
+    vars.insert(
+        "resolution".to_string(),
+        info.resolution.clone().unwrap_or_default(),
+    );
+    vars.insert(
+        "video_codec".to_string(),
+        info.video_codec.clone().unwrap_or_default(),
+    );
+    vars.insert(
+        "audio_codec".to_string(),
+        info.audio_codec.clone().unwrap_or_default(),
+    );
+    vars.insert(
+        "source".to_string(),
+        info.source.clone().unwrap_or_default(),
+    );
+    vars.insert(
+        "release_group".to_string(),
+        info.release_group.clone().unwrap_or_default(),
+    );
+    vars.insert(
+        "language".to_string(),
+        info.language.clone().unwrap_or_default(),
+    );
+
+    vars
+}
+
+/// Resolve the `{episode}` variable with special multi-episode handling.
+///
+/// - Empty: returns `""`
+/// - Single: formatted with modifier (e.g., `"03"` with `:02`)
+/// - Multi: first bare, subsequent E-prefixed (e.g., `"05E06"` for [5,6])
+fn resolve_episode(episodes: &[u16], modifier: Option<&str>) -> Result<String> {
+    if episodes.is_empty() {
+        return Ok(String::new());
+    }
+
+    let format_ep = |ep: u16| -> Result<String> {
+        let raw = ep.to_string();
+        match modifier {
+            Some(m) => apply_modifier(&raw, m),
+            None => Ok(raw),
+        }
+    };
+
+    let mut result = format_ep(episodes[0])?;
+    for &ep in &episodes[1..] {
+        result.push('E');
+        result.push_str(&format_ep(ep)?);
+    }
+
+    Ok(result)
+}
+
+/// Apply a format modifier to a value string.
+///
+/// Currently supports zero-padding modifiers like `02`, `03` etc.
+/// The modifier must start with `0` followed by a width digit.
+fn apply_modifier(value: &str, modifier: &str) -> Result<String> {
+    // Zero-padding modifier: "02", "03", etc.
+    if modifier.starts_with('0') {
+        let width_str = &modifier[1..];
+        let width: usize = width_str.parse().map_err(|_| MediError::InvalidModifier {
+            modifier: modifier.to_string(),
+        })?;
+
+        // Try to parse value as number for zero-padding
+        if let Ok(num) = value.parse::<u64>() {
+            return Ok(format!("{:0>width$}", num, width = width));
+        }
+        // Non-numeric value with zero-pad modifier: just return as-is
+        return Ok(value.to_string());
+    }
+
+    Err(MediError::InvalidModifier {
+        modifier: modifier.to_string(),
+    })
+}
+
+/// Collapse consecutive dots into single dots, and strip leading/trailing dots
+/// from each path component segment (separated by `/`).
+fn collapse_dots(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut last_was_dot = false;
+
+    for ch in input.chars() {
+        if ch == '.' {
+            if !last_was_dot {
+                result.push('.');
+            }
+            last_was_dot = true;
+        } else {
+            last_was_dot = false;
+            result.push(ch);
+        }
+    }
+
+    // Strip leading/trailing dots from each path component
+    result
+        .split('/')
+        .map(|component| {
+            component
+                .trim_start_matches('.')
+                .trim_end_matches('.')
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Sanitize a single path component for cross-platform compatibility.
+///
+/// Uses the `sanitize-filename` crate to handle Windows reserved names
+/// and illegal characters.
+fn sanitize_component(component: &str) -> String {
+    let opts = sanitize_filename::Options {
+        truncate: true,
+        windows: true,
+        replacement: "",
+    };
+    let sanitized = sanitize_filename::sanitize_with_options(component, opts);
+    // Trim trailing dots/spaces (Windows restriction)
+    sanitized.trim_end_matches('.').trim_end_matches(' ').to_string()
+}
 
 #[cfg(test)]
 mod tests {
     use crate::error::MediError;
-    use crate::types::{MediaInfo, MediaType, ParseConfidence, TemplateWarning};
+    use crate::types::{MediaInfo, MediaType, ParseConfidence};
     use std::path::PathBuf;
 
     // -----------------------------------------------------------------------

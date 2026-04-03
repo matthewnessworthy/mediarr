@@ -20,4 +20,5 @@ pub mod template;
 
 pub use error::{MediError, Result};
 pub use fs_util::{path_to_utf8, safe_move};
+pub use template::TemplateEngine;
 pub use types::*;
