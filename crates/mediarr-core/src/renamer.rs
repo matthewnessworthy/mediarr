@@ -5,12 +5,12 @@
 //! execution that stops on first failure. Uses shared `safe_move` from
 //! `fs_util` for cross-filesystem EXDEV handling.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tracing::{debug, info, warn};
 
 use crate::config::GeneralConfig;
-use crate::error::Result;
 use crate::types::{ConflictStrategy, RenameOperation, RenameResult};
 
 /// A single entry in a rename plan: source -> dest.
@@ -71,8 +71,71 @@ impl Renamer {
     /// Checks for conflicts (existing targets, duplicate destinations within
     /// the plan) and applies the configured conflict strategy to each entry.
     /// Returns a `RenameResult` for each entry showing what *would* happen.
-    pub fn dry_run(&self, _plan: &RenamePlan) -> Vec<RenameResult> {
-        todo!("dry_run not yet implemented")
+    pub fn dry_run(&self, plan: &RenamePlan) -> Vec<RenameResult> {
+        let mut results = Vec::with_capacity(plan.entries.len());
+        let mut seen_dests: HashSet<PathBuf> = HashSet::new();
+
+        for entry in &plan.entries {
+            let conflict = entry.dest_path.exists() || seen_dests.contains(&entry.dest_path);
+
+            if conflict {
+                match self.conflict_strategy {
+                    ConflictStrategy::Skip => {
+                        debug!(
+                            source = %entry.source_path.display(),
+                            dest = %entry.dest_path.display(),
+                            "dry_run: skipping conflict"
+                        );
+                        results.push(RenameResult {
+                            source_path: entry.source_path.clone(),
+                            dest_path: entry.dest_path.clone(),
+                            success: false,
+                            error: Some("skipped: target already exists".into()),
+                        });
+                    }
+                    ConflictStrategy::Overwrite => {
+                        debug!(
+                            source = %entry.source_path.display(),
+                            dest = %entry.dest_path.display(),
+                            "dry_run: would overwrite"
+                        );
+                        seen_dests.insert(entry.dest_path.clone());
+                        results.push(RenameResult {
+                            source_path: entry.source_path.clone(),
+                            dest_path: entry.dest_path.clone(),
+                            success: true,
+                            error: None,
+                        });
+                    }
+                    ConflictStrategy::NumericSuffix => {
+                        let suffixed = resolve_numeric_suffix(&entry.dest_path);
+                        debug!(
+                            source = %entry.source_path.display(),
+                            dest = %suffixed.display(),
+                            "dry_run: would use numeric suffix"
+                        );
+                        seen_dests.insert(suffixed.clone());
+                        results.push(RenameResult {
+                            source_path: entry.source_path.clone(),
+                            dest_path: suffixed,
+                            success: true,
+                            error: None,
+                        });
+                    }
+                }
+            } else {
+                seen_dests.insert(entry.dest_path.clone());
+                results.push(RenameResult {
+                    source_path: entry.source_path.clone(),
+                    dest_path: entry.dest_path.clone(),
+                    success: true,
+                    error: None,
+                });
+            }
+        }
+
+        info!(entries = plan.entries.len(), "dry_run complete");
+        results
     }
 
     /// Execute a rename plan, moving or copying files.
@@ -80,8 +143,193 @@ impl Renamer {
     /// Processes entries in order. On failure, stops immediately and returns
     /// results for all completed entries plus the failed one. Remaining entries
     /// are not attempted (RENM-05: stop on failure).
-    pub fn execute(&self, _plan: &RenamePlan) -> Vec<RenameResult> {
-        todo!("execute not yet implemented")
+    pub fn execute(&self, plan: &RenamePlan) -> Vec<RenameResult> {
+        let mut results = Vec::with_capacity(plan.entries.len());
+
+        for entry in &plan.entries {
+            // Determine effective destination (may change due to conflict resolution)
+            let effective_dest = if entry.dest_path.exists() {
+                match self.conflict_strategy {
+                    ConflictStrategy::Skip => {
+                        info!(
+                            source = %entry.source_path.display(),
+                            dest = %entry.dest_path.display(),
+                            "skipping: target already exists"
+                        );
+                        results.push(RenameResult {
+                            source_path: entry.source_path.clone(),
+                            dest_path: entry.dest_path.clone(),
+                            success: false,
+                            error: Some("skipped: target already exists".into()),
+                        });
+                        continue;
+                    }
+                    ConflictStrategy::Overwrite => {
+                        debug!(
+                            dest = %entry.dest_path.display(),
+                            "overwriting existing target"
+                        );
+                        // Remove existing file before move/copy
+                        if let Err(e) = std::fs::remove_file(&entry.dest_path) {
+                            warn!(
+                                dest = %entry.dest_path.display(),
+                                error = %e,
+                                "failed to remove existing target for overwrite"
+                            );
+                            results.push(RenameResult {
+                                source_path: entry.source_path.clone(),
+                                dest_path: entry.dest_path.clone(),
+                                success: false,
+                                error: Some(format!("overwrite failed: {e}")),
+                            });
+                            break;
+                        }
+                        entry.dest_path.clone()
+                    }
+                    ConflictStrategy::NumericSuffix => {
+                        let suffixed = resolve_numeric_suffix(&entry.dest_path);
+                        debug!(
+                            original = %entry.dest_path.display(),
+                            suffixed = %suffixed.display(),
+                            "using numeric suffix to avoid conflict"
+                        );
+                        suffixed
+                    }
+                }
+            } else {
+                entry.dest_path.clone()
+            };
+
+            // Create target directories if configured
+            if self.create_directories {
+                if let Some(parent) = effective_dest.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            results.push(RenameResult {
+                                source_path: entry.source_path.clone(),
+                                dest_path: effective_dest,
+                                success: false,
+                                error: Some(format!("failed to create directory: {e}")),
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Perform the operation
+            match self.operation {
+                RenameOperation::Move => {
+                    match crate::fs_util::safe_move(&entry.source_path, &effective_dest) {
+                        Ok(()) => {
+                            info!(
+                                source = %entry.source_path.display(),
+                                dest = %effective_dest.display(),
+                                "moved file successfully"
+                            );
+                            results.push(RenameResult {
+                                source_path: entry.source_path.clone(),
+                                dest_path: effective_dest,
+                                success: true,
+                                error: None,
+                            });
+                        }
+                        Err(e) => {
+                            warn!(
+                                source = %entry.source_path.display(),
+                                dest = %effective_dest.display(),
+                                error = %e,
+                                "move failed"
+                            );
+                            results.push(RenameResult {
+                                source_path: entry.source_path.clone(),
+                                dest_path: effective_dest,
+                                success: false,
+                                error: Some(format!("{e}")),
+                            });
+                            break; // Stop on first failure (RENM-05)
+                        }
+                    }
+                }
+                RenameOperation::Copy => {
+                    match std::fs::copy(&entry.source_path, &effective_dest) {
+                        Ok(_) => {
+                            // Verify sizes match
+                            let src_size = match std::fs::metadata(&entry.source_path) {
+                                Ok(m) => m.len(),
+                                Err(e) => {
+                                    results.push(RenameResult {
+                                        source_path: entry.source_path.clone(),
+                                        dest_path: effective_dest,
+                                        success: false,
+                                        error: Some(format!("copy verify failed: {e}")),
+                                    });
+                                    break;
+                                }
+                            };
+                            let dest_size = match std::fs::metadata(&effective_dest) {
+                                Ok(m) => m.len(),
+                                Err(e) => {
+                                    results.push(RenameResult {
+                                        source_path: entry.source_path.clone(),
+                                        dest_path: effective_dest,
+                                        success: false,
+                                        error: Some(format!("copy verify failed: {e}")),
+                                    });
+                                    break;
+                                }
+                            };
+
+                            if src_size != dest_size {
+                                // Remove the bad copy
+                                let _ = std::fs::remove_file(&effective_dest);
+                                results.push(RenameResult {
+                                    source_path: entry.source_path.clone(),
+                                    dest_path: effective_dest,
+                                    success: false,
+                                    error: Some("copy verification failed: size mismatch".into()),
+                                });
+                                break;
+                            }
+
+                            info!(
+                                source = %entry.source_path.display(),
+                                dest = %effective_dest.display(),
+                                "copied file successfully"
+                            );
+                            results.push(RenameResult {
+                                source_path: entry.source_path.clone(),
+                                dest_path: effective_dest,
+                                success: true,
+                                error: None,
+                            });
+                        }
+                        Err(e) => {
+                            warn!(
+                                source = %entry.source_path.display(),
+                                dest = %effective_dest.display(),
+                                error = %e,
+                                "copy failed"
+                            );
+                            results.push(RenameResult {
+                                source_path: entry.source_path.clone(),
+                                dest_path: effective_dest,
+                                success: false,
+                                error: Some(format!("{e}")),
+                            });
+                            break; // Stop on first failure (RENM-05)
+                        }
+                    }
+                }
+            }
+        }
+
+        info!(
+            total = plan.entries.len(),
+            completed = results.len(),
+            "execute complete"
+        );
+        results
     }
 }
 
@@ -89,14 +337,36 @@ impl Renamer {
 ///
 /// Given a path like `/dest/Movie.mkv`, tries `/dest/Movie (1).mkv`,
 /// `/dest/Movie (2).mkv`, etc. up to 99. Returns the first non-existing path.
-fn resolve_numeric_suffix(_dest: &Path) -> PathBuf {
-    todo!("resolve_numeric_suffix not yet implemented")
+fn resolve_numeric_suffix(dest: &Path) -> PathBuf {
+    let parent = dest.parent().unwrap_or_else(|| Path::new(""));
+    let stem = dest
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = dest.extension().and_then(|e| e.to_str());
+
+    for i in 1..=99 {
+        let filename = match ext {
+            Some(e) => format!("{stem} ({i}).{e}"),
+            None => format!("{stem} ({i})"),
+        };
+        let candidate = parent.join(&filename);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    // Exhausted all 99 suffixes -- return (99) regardless
+    let filename = match ext {
+        Some(e) => format!("{stem} (99).{e}"),
+        None => format!("{stem} (99)"),
+    };
+    parent.join(&filename)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use tempfile::TempDir;
 
     // -----------------------------------------------------------------------
@@ -234,7 +504,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let src = dir.path().join("movie.mkv");
         std::fs::write(&src, b"video data").unwrap();
-        let dest = dir.path().join("Movie.mkv");
+        let dest = dir.path().join("renamed-movie.mkv");
 
         let renamer = Renamer::new(
             RenameOperation::Move,
@@ -432,9 +702,9 @@ mod tests {
     #[test]
     fn conflict_numeric_suffix_appends_number() {
         let dir = TempDir::new().unwrap();
-        let src = dir.path().join("movie.mkv");
+        let src = dir.path().join("new-movie.mkv");
         std::fs::write(&src, b"new data").unwrap();
-        let dest = dir.path().join("Movie.mkv");
+        let dest = dir.path().join("target.mkv");
         std::fs::write(&dest, b"existing data").unwrap();
 
         let renamer = Renamer::new(
@@ -456,7 +726,7 @@ mod tests {
         // Original still intact
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "existing data");
         // New file at suffixed path
-        let suffixed = dir.path().join("Movie (1).mkv");
+        let suffixed = dir.path().join("target (1).mkv");
         assert!(suffixed.exists());
         assert_eq!(std::fs::read_to_string(&suffixed).unwrap(), "new data");
         assert_eq!(results[0].dest_path, suffixed);
@@ -543,10 +813,10 @@ mod tests {
     fn source_files_never_deleted_only_moved() {
         // This test verifies Move uses rename/safe_move semantics, not delete
         let dir = TempDir::new().unwrap();
-        let src = dir.path().join("movie.mkv");
+        let src = dir.path().join("original-movie.mkv");
         let content = b"important video data";
         std::fs::write(&src, content).unwrap();
-        let dest = dir.path().join("Movie.mkv");
+        let dest = dir.path().join("renamed-movie.mkv");
 
         let renamer = Renamer::new(
             RenameOperation::Move,
