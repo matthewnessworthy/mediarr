@@ -129,6 +129,11 @@ pub enum MediError {
     /// Subtitle discovery or processing error.
     #[error("subtitle discovery error: {0}")]
     SubtitleDiscovery(String),
+
+    // -- Watcher errors --
+    /// Filesystem watcher error.
+    #[error("watcher error: {0}")]
+    Watcher(String),
 }
 
 /// Convenience result alias for mediarr-core operations.

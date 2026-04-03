@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use crate::error::{MediError, Result};
-use crate::types::{ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation};
+use crate::types::{ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation, WatcherConfig};
 
 /// Top-level application configuration.
 ///
@@ -23,6 +23,9 @@ pub struct Config {
     pub templates: TemplateConfig,
     /// Subtitle discovery and handling settings.
     pub subtitles: SubtitleConfig,
+    /// Configured folder watchers (TOML `[[watchers]]` array).
+    #[serde(default)]
+    pub watchers: Vec<WatcherConfig>,
 }
 
 /// General application settings.
@@ -76,6 +79,7 @@ impl Default for Config {
             general: GeneralConfig::default(),
             templates: TemplateConfig::default(),
             subtitles: SubtitleConfig::default(),
+            watchers: Vec::new(),
         }
     }
 }
@@ -307,6 +311,7 @@ mod tests {
                 non_preferred_action: NonPreferredAction::Backup,
                 backup_path: Some(PathBuf::from("/media/backup/subs")),
             },
+            watchers: Vec::new(),
         };
 
         let toml_str = toml::to_string_pretty(&config).expect("serialize");
@@ -351,6 +356,7 @@ mod tests {
                 preferred_languages: vec!["en".to_string(), "fr".to_string()],
                 ..SubtitleConfig::default()
             },
+            watchers: Vec::new(),
         };
 
         config.save(&path).expect("save");
@@ -390,5 +396,117 @@ mod tests {
             MediError::ConfigParse(_) => {} // expected
             other => panic!("expected ConfigParse, got: {other:?}"),
         }
+    }
+
+    // -- Watcher config tests --
+
+    #[test]
+    fn default_config_watchers_is_empty_vec() {
+        let config = Config::default();
+        assert!(config.watchers.is_empty());
+    }
+
+    #[test]
+    fn watcher_config_default_values() {
+        let wc = WatcherConfig::default();
+        assert_eq!(wc.path, PathBuf::new());
+        assert_eq!(wc.mode, crate::types::WatcherMode::Auto);
+        assert!(wc.active);
+        assert_eq!(wc.debounce_seconds, 5);
+    }
+
+    #[test]
+    fn watcher_mode_serde_lowercase() {
+        // Serialize
+        let auto_json = serde_json::to_string(&crate::types::WatcherMode::Auto).unwrap();
+        assert_eq!(auto_json, r#""auto""#);
+        let review_json = serde_json::to_string(&crate::types::WatcherMode::Review).unwrap();
+        assert_eq!(review_json, r#""review""#);
+
+        // Deserialize
+        let auto: crate::types::WatcherMode = serde_json::from_str(r#""auto""#).unwrap();
+        assert_eq!(auto, crate::types::WatcherMode::Auto);
+        let review: crate::types::WatcherMode = serde_json::from_str(r#""review""#).unwrap();
+        assert_eq!(review, crate::types::WatcherMode::Review);
+    }
+
+    #[test]
+    fn config_with_watchers_toml_round_trip() {
+        let config = Config {
+            general: GeneralConfig::default(),
+            templates: TemplateConfig::default(),
+            subtitles: SubtitleConfig::default(),
+            watchers: vec![
+                WatcherConfig {
+                    path: PathBuf::from("/watch/movies"),
+                    mode: crate::types::WatcherMode::Auto,
+                    active: true,
+                    debounce_seconds: 5,
+                },
+                WatcherConfig {
+                    path: PathBuf::from("/watch/series"),
+                    mode: crate::types::WatcherMode::Review,
+                    active: false,
+                    debounce_seconds: 10,
+                },
+            ],
+        };
+
+        let toml_str = toml::to_string_pretty(&config).expect("serialize");
+        let restored: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(config, restored);
+        assert_eq!(restored.watchers.len(), 2);
+        assert_eq!(restored.watchers[0].path, PathBuf::from("/watch/movies"));
+        assert_eq!(restored.watchers[1].mode, crate::types::WatcherMode::Review);
+    }
+
+    #[test]
+    fn config_with_empty_watchers_toml_round_trip() {
+        let config = Config::default();
+        let toml_str = toml::to_string_pretty(&config).expect("serialize");
+        let restored: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(config, restored);
+        assert!(restored.watchers.is_empty());
+    }
+
+    #[test]
+    fn watcher_event_serde_json_round_trip() {
+        let event = crate::types::WatcherEvent {
+            id: Some(42),
+            timestamp: "2024-06-15T10:00:00Z".to_string(),
+            watch_path: PathBuf::from("/watch/movies"),
+            filename: "movie.mkv".to_string(),
+            action: crate::types::WatcherAction::Renamed,
+            detail: Some("/dst/movie.mkv".to_string()),
+            batch_id: Some("batch-123".to_string()),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: crate::types::WatcherEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.id, Some(42));
+        assert_eq!(restored.filename, "movie.mkv");
+        assert_eq!(restored.action, crate::types::WatcherAction::Renamed);
+        assert_eq!(restored.batch_id, Some("batch-123".to_string()));
+    }
+
+    #[test]
+    fn review_queue_entry_serde_json_round_trip() {
+        let entry = crate::types::ReviewQueueEntry {
+            id: Some(7),
+            timestamp: "2024-06-15T10:00:00Z".to_string(),
+            watch_path: PathBuf::from("/watch/movies"),
+            source_path: PathBuf::from("/src/movie.mkv"),
+            proposed_path: PathBuf::from("/dst/movie.mkv"),
+            media_info_json: r#"{"title":"Test"}"#.to_string(),
+            subtitles_json: "[]".to_string(),
+            status: crate::types::ReviewStatus::Pending,
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: crate::types::ReviewQueueEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.id, Some(7));
+        assert_eq!(restored.source_path, PathBuf::from("/src/movie.mkv"));
+        assert_eq!(restored.status, crate::types::ReviewStatus::Pending);
+        assert_eq!(restored.media_info_json, r#"{"title":"Test"}"#);
     }
 }

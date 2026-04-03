@@ -375,3 +375,134 @@ impl ScanFilter {
         true
     }
 }
+
+// ---------------------------------------------------------------------------
+// Watcher Types
+// ---------------------------------------------------------------------------
+
+/// Configuration for a single watched folder (per D-04, D-08).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WatcherConfig {
+    /// Path to watch for new files.
+    pub path: PathBuf,
+    /// Operating mode: auto-rename or queue for review.
+    pub mode: WatcherMode,
+    /// Whether this watcher is active.
+    pub active: bool,
+    /// Debounce duration in seconds (default 5).
+    pub debounce_seconds: u64,
+}
+
+/// Watcher operating mode (per WATC-02, WATC-03).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WatcherMode {
+    /// Scan and rename automatically.
+    Auto,
+    /// Scan and queue for user review.
+    Review,
+}
+
+impl Default for WatcherConfig {
+    fn default() -> Self {
+        Self {
+            path: PathBuf::new(),
+            mode: WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+        }
+    }
+}
+
+impl fmt::Display for WatcherMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WatcherMode::Auto => write!(f, "auto"),
+            WatcherMode::Review => write!(f, "review"),
+        }
+    }
+}
+
+/// Action taken by the watcher on a file event (per D-06).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WatcherAction {
+    /// File was renamed successfully.
+    Renamed,
+    /// File was queued for review.
+    Queued,
+    /// An error occurred processing the file.
+    Error,
+}
+
+impl fmt::Display for WatcherAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WatcherAction::Renamed => write!(f, "renamed"),
+            WatcherAction::Queued => write!(f, "queued"),
+            WatcherAction::Error => write!(f, "error"),
+        }
+    }
+}
+
+/// A logged watcher event (per D-06, WATC-05).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatcherEvent {
+    /// Database row ID (None for new events not yet inserted).
+    pub id: Option<i64>,
+    /// ISO 8601 timestamp of the event.
+    pub timestamp: String,
+    /// Path of the watched folder that triggered this event.
+    pub watch_path: PathBuf,
+    /// Filename that was detected.
+    pub filename: String,
+    /// Action taken on the file.
+    pub action: WatcherAction,
+    /// Detail string (target path for renamed, error message for errors).
+    pub detail: Option<String>,
+    /// Associated rename batch ID, if applicable.
+    pub batch_id: Option<String>,
+}
+
+/// Review queue status values (per D-10).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewStatus {
+    /// Awaiting user review.
+    Pending,
+    /// User approved the rename.
+    Approved,
+    /// User rejected the rename.
+    Rejected,
+}
+
+impl fmt::Display for ReviewStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReviewStatus::Pending => write!(f, "pending"),
+            ReviewStatus::Approved => write!(f, "approved"),
+            ReviewStatus::Rejected => write!(f, "rejected"),
+        }
+    }
+}
+
+/// An entry in the review queue (per D-10, D-11).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewQueueEntry {
+    /// Database row ID (None for new entries not yet inserted).
+    pub id: Option<i64>,
+    /// ISO 8601 timestamp when the entry was queued.
+    pub timestamp: String,
+    /// Path of the watched folder that triggered this entry.
+    pub watch_path: PathBuf,
+    /// Original source file path.
+    pub source_path: PathBuf,
+    /// Proposed destination path after template application.
+    pub proposed_path: PathBuf,
+    /// Serialised MediaInfo as JSON string.
+    pub media_info_json: String,
+    /// Serialised subtitle matches as JSON string.
+    pub subtitles_json: String,
+    /// Current review status.
+    pub status: ReviewStatus,
+}

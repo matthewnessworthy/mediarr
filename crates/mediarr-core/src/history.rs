@@ -11,7 +11,10 @@ use tracing::{debug, info, warn};
 
 use crate::error::{MediError, Result};
 use crate::fs_util;
-use crate::types::{BatchSummary, MediaInfo, RenameRecord, RenameResult, UndoEligibility, UndoIssue};
+use crate::types::{
+    BatchSummary, MediaInfo, RenameRecord, RenameResult, ReviewQueueEntry, ReviewStatus,
+    UndoEligibility, UndoIssue, WatcherAction, WatcherEvent,
+};
 
 /// SQL schema for the rename history table.
 ///
@@ -29,6 +32,37 @@ CREATE TABLE IF NOT EXISTS rename_history (
 );
 CREATE INDEX IF NOT EXISTS idx_batch_id ON rename_history(batch_id);
 CREATE INDEX IF NOT EXISTS idx_timestamp ON rename_history(timestamp);
+";
+
+/// SQL schema for watcher-related tables.
+///
+/// Creates `watcher_events` for activity logging and `review_queue` for
+/// the queue-for-review workflow. Both use `CREATE TABLE IF NOT EXISTS`.
+const WATCHER_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS watcher_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    watch_path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT,
+    batch_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_watcher_events_watch_path ON watcher_events(watch_path);
+CREATE INDEX IF NOT EXISTS idx_watcher_events_timestamp ON watcher_events(timestamp);
+
+CREATE TABLE IF NOT EXISTS review_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    watch_path TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    proposed_path TEXT NOT NULL,
+    media_info TEXT NOT NULL,
+    subtitles TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS idx_review_queue_watch_path ON review_queue(watch_path);
+CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue(status);
 ";
 
 /// SQLite-backed rename history database.
@@ -52,6 +86,7 @@ impl HistoryDb {
 
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA)?;
+        conn.execute_batch(WATCHER_SCHEMA)?;
 
         debug!(?path, "opened history database");
         Ok(Self { conn })
@@ -290,6 +325,239 @@ impl HistoryDb {
         }
 
         Ok(results)
+    }
+
+    // -----------------------------------------------------------------------
+    // Watcher event methods
+    // -----------------------------------------------------------------------
+
+    /// Log a watcher event to the database.
+    pub fn log_watcher_event(&self, event: &WatcherEvent) -> Result<()> {
+        let watch_path_str = crate::fs_util::path_to_utf8(&event.watch_path)?;
+        let action_str = event.action.to_string();
+
+        self.conn.execute(
+            "INSERT INTO watcher_events (timestamp, watch_path, filename, action, detail, batch_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                event.timestamp,
+                watch_path_str,
+                event.filename,
+                action_str,
+                event.detail,
+                event.batch_id,
+            ],
+        )?;
+
+        debug!(filename = %event.filename, action = %action_str, "logged watcher event");
+        Ok(())
+    }
+
+    /// List watcher events, optionally filtered by watch path.
+    ///
+    /// Returns events in reverse chronological order (newest first).
+    pub fn list_watcher_events(
+        &self,
+        watch_path: Option<&Path>,
+        limit: Option<usize>,
+    ) -> Result<Vec<WatcherEvent>> {
+        let (query, watch_path_str);
+
+        if let Some(wp) = watch_path {
+            watch_path_str = crate::fs_util::path_to_utf8(wp)?;
+            query = match limit {
+                Some(n) => format!(
+                    "SELECT id, timestamp, watch_path, filename, action, detail, batch_id \
+                     FROM watcher_events WHERE watch_path = ?1 \
+                     ORDER BY timestamp DESC LIMIT {n}"
+                ),
+                None => "SELECT id, timestamp, watch_path, filename, action, detail, batch_id \
+                         FROM watcher_events WHERE watch_path = ?1 \
+                         ORDER BY timestamp DESC"
+                    .to_string(),
+            };
+
+            let mut stmt = self.conn.prepare(&query)?;
+            let events = stmt
+                .query_map(params![watch_path_str], |row| Self::map_watcher_event_row(row))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(events)
+        } else {
+            query = match limit {
+                Some(n) => format!(
+                    "SELECT id, timestamp, watch_path, filename, action, detail, batch_id \
+                     FROM watcher_events ORDER BY timestamp DESC LIMIT {n}"
+                ),
+                None => "SELECT id, timestamp, watch_path, filename, action, detail, batch_id \
+                         FROM watcher_events ORDER BY timestamp DESC"
+                    .to_string(),
+            };
+
+            let mut stmt = self.conn.prepare(&query)?;
+            let events = stmt
+                .query_map([], |row| Self::map_watcher_event_row(row))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(events)
+        }
+    }
+
+    /// Prune watcher events for a given watch path, keeping only the most
+    /// recent `max_events` entries (per D-07).
+    ///
+    /// Returns the number of rows deleted.
+    pub fn prune_watcher_events(&self, watch_path: &Path, max_events: usize) -> Result<usize> {
+        let watch_path_str = crate::fs_util::path_to_utf8(watch_path)?;
+
+        let deleted = self.conn.execute(
+            "DELETE FROM watcher_events WHERE watch_path = ?1 AND id NOT IN (
+                SELECT id FROM watcher_events WHERE watch_path = ?1
+                ORDER BY timestamp DESC LIMIT ?2
+            )",
+            params![watch_path_str, max_events as i64],
+        )?;
+
+        if deleted > 0 {
+            debug!(watch_path = %watch_path_str, deleted, "pruned watcher events");
+        }
+        Ok(deleted)
+    }
+
+    /// Map a SQLite row to a WatcherEvent.
+    fn map_watcher_event_row(row: &rusqlite::Row) -> rusqlite::Result<WatcherEvent> {
+        let action_str: String = row.get(4)?;
+        let action = match action_str.as_str() {
+            "renamed" => WatcherAction::Renamed,
+            "queued" => WatcherAction::Queued,
+            _ => WatcherAction::Error,
+        };
+
+        Ok(WatcherEvent {
+            id: Some(row.get(0)?),
+            timestamp: row.get(1)?,
+            watch_path: PathBuf::from(row.get::<_, String>(2)?),
+            filename: row.get(3)?,
+            action,
+            detail: row.get(5)?,
+            batch_id: row.get(6)?,
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Review queue methods
+    // -----------------------------------------------------------------------
+
+    /// Add an entry to the review queue.
+    ///
+    /// Returns the new row ID.
+    pub fn add_to_review_queue(&self, entry: &ReviewQueueEntry) -> Result<i64> {
+        let watch_path_str = crate::fs_util::path_to_utf8(&entry.watch_path)?;
+        let source_path_str = crate::fs_util::path_to_utf8(&entry.source_path)?;
+        let proposed_path_str = crate::fs_util::path_to_utf8(&entry.proposed_path)?;
+        let status_str = entry.status.to_string();
+
+        self.conn.execute(
+            "INSERT INTO review_queue (timestamp, watch_path, source_path, proposed_path, media_info, subtitles, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                entry.timestamp,
+                watch_path_str,
+                source_path_str,
+                proposed_path_str,
+                entry.media_info_json,
+                entry.subtitles_json,
+                status_str,
+            ],
+        )?;
+
+        let id = self.conn.last_insert_rowid();
+        debug!(id, source = %source_path_str, "added to review queue");
+        Ok(id)
+    }
+
+    /// List review queue entries, optionally filtered by watch path and/or status.
+    pub fn list_review_queue(
+        &self,
+        watch_path: Option<&Path>,
+        status: Option<ReviewStatus>,
+    ) -> Result<Vec<ReviewQueueEntry>> {
+        let mut conditions = Vec::new();
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut param_idx = 1;
+
+        if let Some(wp) = watch_path {
+            let wp_str = crate::fs_util::path_to_utf8(wp)?;
+            conditions.push(format!("watch_path = ?{param_idx}"));
+            param_values.push(Box::new(wp_str));
+            param_idx += 1;
+        }
+
+        if let Some(st) = status {
+            conditions.push(format!("status = ?{param_idx}"));
+            param_values.push(Box::new(st.to_string()));
+            // param_idx is unused after this but kept for clarity
+            let _ = param_idx;
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", conditions.join(" AND "))
+        };
+
+        let query = format!(
+            "SELECT id, timestamp, watch_path, source_path, proposed_path, media_info, subtitles, status \
+             FROM review_queue{where_clause} ORDER BY timestamp DESC"
+        );
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let entries = stmt
+            .query_map(params.as_slice(), |row| Self::map_review_queue_row(row))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(entries)
+    }
+
+    /// Update the status of a review queue entry.
+    pub fn update_review_status(&self, id: i64, status: ReviewStatus) -> Result<()> {
+        let status_str = status.to_string();
+        self.conn.execute(
+            "UPDATE review_queue SET status = ?1 WHERE id = ?2",
+            params![status_str, id],
+        )?;
+        debug!(id, status = %status_str, "updated review queue status");
+        Ok(())
+    }
+
+    /// Remove a review queue entry by ID.
+    pub fn remove_review_entry(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM review_queue WHERE id = ?1",
+            params![id],
+        )?;
+        debug!(id, "removed review queue entry");
+        Ok(())
+    }
+
+    /// Map a SQLite row to a ReviewQueueEntry.
+    fn map_review_queue_row(row: &rusqlite::Row) -> rusqlite::Result<ReviewQueueEntry> {
+        let status_str: String = row.get(7)?;
+        let status = match status_str.as_str() {
+            "approved" => ReviewStatus::Approved,
+            "rejected" => ReviewStatus::Rejected,
+            _ => ReviewStatus::Pending,
+        };
+
+        Ok(ReviewQueueEntry {
+            id: Some(row.get(0)?),
+            timestamp: row.get(1)?,
+            watch_path: PathBuf::from(row.get::<_, String>(2)?),
+            source_path: PathBuf::from(row.get::<_, String>(3)?),
+            proposed_path: PathBuf::from(row.get::<_, String>(4)?),
+            media_info_json: row.get(5)?,
+            subtitles_json: row.get(6)?,
+            status,
+        })
     }
 }
 
@@ -637,5 +905,227 @@ mod tests {
         assert_eq!(parts[4].len(), 12);
         // Version nibble should be 4
         assert!(parts[2].starts_with('4'));
+    }
+
+    // -----------------------------------------------------------------------
+    // Watcher tables schema
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_open_creates_watcher_tables() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let db = HistoryDb::open(&db_path).unwrap();
+
+        // Verify watcher_events table exists
+        let mut stmt = db
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+            .unwrap();
+        let tables: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(tables.contains(&"watcher_events".to_string()), "watcher_events table should exist");
+        assert!(tables.contains(&"review_queue".to_string()), "review_queue table should exist");
+        assert!(tables.contains(&"rename_history".to_string()), "rename_history should still exist");
+
+        // Verify watcher indexes exist
+        let mut stmt = db
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index'")
+            .unwrap();
+        let indexes: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(indexes.contains(&"idx_watcher_events_watch_path".to_string()));
+        assert!(indexes.contains(&"idx_watcher_events_timestamp".to_string()));
+        assert!(indexes.contains(&"idx_review_queue_watch_path".to_string()));
+        assert!(indexes.contains(&"idx_review_queue_status".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Watcher event CRUD
+    // -----------------------------------------------------------------------
+
+    fn make_watcher_event(watch_path: &Path, filename: &str, action: WatcherAction) -> WatcherEvent {
+        WatcherEvent {
+            id: None,
+            timestamp: "2024-06-15T10:00:00Z".to_string(),
+            watch_path: watch_path.to_path_buf(),
+            filename: filename.to_string(),
+            action,
+            detail: Some("test detail".to_string()),
+            batch_id: None,
+        }
+    }
+
+    #[test]
+    fn test_log_and_list_watcher_events() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp = Path::new("/watch/movies");
+        let event = make_watcher_event(wp, "Movie.2024.mkv", WatcherAction::Renamed);
+
+        db.log_watcher_event(&event).unwrap();
+
+        let events = db.list_watcher_events(Some(wp), None).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].filename, "Movie.2024.mkv");
+        assert_eq!(events[0].action, WatcherAction::Renamed);
+        assert_eq!(events[0].watch_path, wp.to_path_buf());
+        assert!(events[0].id.is_some());
+    }
+
+    #[test]
+    fn test_list_watcher_events_filters_by_watch_path() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp1 = Path::new("/watch/movies");
+        let wp2 = Path::new("/watch/series");
+
+        db.log_watcher_event(&make_watcher_event(wp1, "movie.mkv", WatcherAction::Renamed))
+            .unwrap();
+        db.log_watcher_event(&make_watcher_event(wp2, "series.mkv", WatcherAction::Queued))
+            .unwrap();
+
+        let events_wp1 = db.list_watcher_events(Some(wp1), None).unwrap();
+        assert_eq!(events_wp1.len(), 1);
+        assert_eq!(events_wp1[0].filename, "movie.mkv");
+
+        let events_all = db.list_watcher_events(None, None).unwrap();
+        assert_eq!(events_all.len(), 2);
+    }
+
+    #[test]
+    fn test_prune_watcher_events_keeps_max() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp = Path::new("/watch/movies");
+
+        for i in 0..5 {
+            let mut event = make_watcher_event(wp, &format!("file{i}.mkv"), WatcherAction::Renamed);
+            event.timestamp = format!("2024-06-15T10:0{i}:00Z");
+            db.log_watcher_event(&event).unwrap();
+        }
+
+        let events_before = db.list_watcher_events(Some(wp), None).unwrap();
+        assert_eq!(events_before.len(), 5);
+
+        let deleted = db.prune_watcher_events(wp, 2).unwrap();
+        assert_eq!(deleted, 3);
+
+        let events_after = db.list_watcher_events(Some(wp), None).unwrap();
+        assert_eq!(events_after.len(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Review queue CRUD
+    // -----------------------------------------------------------------------
+
+    fn make_review_entry(watch_path: &Path, source: &str, proposed: &str) -> ReviewQueueEntry {
+        ReviewQueueEntry {
+            id: None,
+            timestamp: "2024-06-15T10:00:00Z".to_string(),
+            watch_path: watch_path.to_path_buf(),
+            source_path: PathBuf::from(source),
+            proposed_path: PathBuf::from(proposed),
+            media_info_json: r#"{"title":"Test"}"#.to_string(),
+            subtitles_json: "[]".to_string(),
+            status: ReviewStatus::Pending,
+        }
+    }
+
+    #[test]
+    fn test_add_and_list_review_queue() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp = Path::new("/watch/movies");
+        let entry = make_review_entry(wp, "/src/movie.mkv", "/dst/movie.mkv");
+
+        let id = db.add_to_review_queue(&entry).unwrap();
+        assert!(id > 0);
+
+        let entries = db.list_review_queue(None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source_path, PathBuf::from("/src/movie.mkv"));
+        assert_eq!(entries[0].status, ReviewStatus::Pending);
+    }
+
+    #[test]
+    fn test_update_review_status() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp = Path::new("/watch/movies");
+        let entry = make_review_entry(wp, "/src/movie.mkv", "/dst/movie.mkv");
+        let id = db.add_to_review_queue(&entry).unwrap();
+
+        db.update_review_status(id, ReviewStatus::Approved).unwrap();
+
+        let entries = db.list_review_queue(None, None).unwrap();
+        assert_eq!(entries[0].status, ReviewStatus::Approved);
+    }
+
+    #[test]
+    fn test_list_review_queue_filters() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp1 = Path::new("/watch/movies");
+        let wp2 = Path::new("/watch/series");
+
+        db.add_to_review_queue(&make_review_entry(wp1, "/src/movie.mkv", "/dst/movie.mkv"))
+            .unwrap();
+        let id2 = db
+            .add_to_review_queue(&make_review_entry(wp2, "/src/series.mkv", "/dst/series.mkv"))
+            .unwrap();
+
+        // Approve second entry
+        db.update_review_status(id2, ReviewStatus::Approved).unwrap();
+
+        // Filter by watch_path
+        let movies = db.list_review_queue(Some(wp1), None).unwrap();
+        assert_eq!(movies.len(), 1);
+        assert_eq!(movies[0].source_path, PathBuf::from("/src/movie.mkv"));
+
+        // Filter by status
+        let pending = db.list_review_queue(None, Some(ReviewStatus::Pending)).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].source_path, PathBuf::from("/src/movie.mkv"));
+
+        let approved = db.list_review_queue(None, Some(ReviewStatus::Approved)).unwrap();
+        assert_eq!(approved.len(), 1);
+        assert_eq!(approved[0].source_path, PathBuf::from("/src/series.mkv"));
+
+        // Filter by both watch_path and status
+        let wp1_pending = db.list_review_queue(Some(wp1), Some(ReviewStatus::Pending)).unwrap();
+        assert_eq!(wp1_pending.len(), 1);
+
+        let wp2_pending = db.list_review_queue(Some(wp2), Some(ReviewStatus::Pending)).unwrap();
+        assert_eq!(wp2_pending.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_review_entry() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let wp = Path::new("/watch/movies");
+        let id = db
+            .add_to_review_queue(&make_review_entry(wp, "/src/movie.mkv", "/dst/movie.mkv"))
+            .unwrap();
+
+        db.remove_review_entry(id).unwrap();
+
+        let entries = db.list_review_queue(None, None).unwrap();
+        assert!(entries.is_empty());
     }
 }

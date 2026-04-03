@@ -27,3 +27,8 @@ pub use renamer::{RenamePlan, RenamePlanEntry, Renamer};
 pub use scanner::Scanner;
 pub use template::TemplateEngine;
 pub use types::*;
+
+// Explicit watcher type re-exports for downstream convenience
+pub use types::{
+    ReviewQueueEntry, ReviewStatus, WatcherAction, WatcherConfig, WatcherEvent, WatcherMode,
+};
