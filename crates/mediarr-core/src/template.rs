@@ -7,11 +7,16 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::error::{MediError, Result};
 use crate::types::{MediaInfo, MediaType, TemplateWarning};
+
+/// Regex for matching `{variable}` or `{variable:modifier}` placeholders.
+static TEMPLATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{(\w+)(?::(\w+))?\}").expect("template regex is valid"));
 
 /// Known template variable names.
 const KNOWN_VARIABLES: &[&str] = &[
@@ -54,15 +59,14 @@ impl TemplateEngine {
     /// modifier is unrecognised.
     pub fn render(&self, template: &str, info: &MediaInfo) -> Result<PathBuf> {
         let vars = build_vars(info);
-        let re = Regex::new(r"\{(\w+)(?::(\w+))?\}").expect("template regex is valid");
 
-        // We need to process the template, replacing each variable match.
-        // Use a manual scan to return errors on unknown variables.
+        // Process the template, replacing each variable match.
+        // Manual scan so we can return errors on unknown variables.
         let mut result = String::new();
         let mut last_end = 0;
 
-        for caps in re.captures_iter(template) {
-            let full_match = caps.get(0).expect("match exists");
+        for caps in TEMPLATE_RE.captures_iter(template) {
+            let full_match = caps.get(0).expect("capture group 0 always exists");
             let var_name = &caps[1];
             let modifier = caps.get(2).map(|m| m.as_str());
 
@@ -119,8 +123,7 @@ impl TemplateEngine {
     ///
     /// Warnings do not block rendering — they are advisory.
     pub fn validate(&self, template: &str, media_type: &MediaType) -> Vec<TemplateWarning> {
-        let re = Regex::new(r"\{(\w+)(?::(\w+))?\}").expect("template regex is valid");
-        let present: Vec<String> = re
+        let present: Vec<String> = TEMPLATE_RE
             .captures_iter(template)
             .map(|c| c[1].to_string())
             .collect();
