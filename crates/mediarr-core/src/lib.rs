@@ -6,11 +6,11 @@
 
 pub mod error;
 pub mod fs_util;
+pub mod parser;
 pub mod types;
 
 // These modules will be added by subsequent plans:
 // pub mod config;
-// pub mod parser;
 // pub mod template;
 // pub mod subtitle;
 // pub mod scanner;
@@ -19,4 +19,5 @@ pub mod types;
 
 pub use error::{MediError, Result};
 pub use fs_util::{path_to_utf8, safe_move};
+pub use parser::{parse_filename, parse_with_context};
 pub use types::*;
