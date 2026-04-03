@@ -8,10 +8,11 @@ pub mod error;
 pub mod fs_util;
 pub mod types;
 
+pub mod template;
+
 // These modules will be added by subsequent plans:
 // pub mod config;
 // pub mod parser;
-// pub mod template;
 // pub mod subtitle;
 // pub mod scanner;
 // pub mod history;
