@@ -198,17 +198,7 @@ impl Scanner {
                 };
 
                 // Determine initial status based on confidence
-                // Both Low and Medium confidence indicate ambiguity worth flagging
-                let status = match media_info.confidence {
-                    ParseConfidence::Low => ScanStatus::Ambiguous,
-                    ParseConfidence::Medium => ScanStatus::Ambiguous,
-                    ParseConfidence::High => ScanStatus::Ok,
-                };
-                let ambiguity_reason = match media_info.confidence {
-                    ParseConfidence::Low => Some("low confidence parse".to_string()),
-                    ParseConfidence::Medium => Some("medium confidence parse".to_string()),
-                    ParseConfidence::High => None,
-                };
+                let (status, ambiguity_reason) = Self::confidence_to_status(&media_info.confidence);
 
                 results.push(ScanResult {
                     source_path: video_path.clone(),
@@ -227,6 +217,110 @@ impl Scanner {
 
         info!(count = results.len(), "scan complete");
         Ok(results)
+    }
+
+    /// Scan a single file and produce a scan result.
+    ///
+    /// Used by the watcher module to process individual file events without
+    /// re-scanning an entire directory. Does not perform conflict detection
+    /// (that is a batch concern).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MediError::ScanPathNotFound`] if the path does not exist.
+    /// Returns [`MediError::ParseFailed`] if the path is not a file or has
+    /// a non-video extension.
+    pub fn scan_file(&self, path: &Path) -> Result<ScanResult> {
+        // Validate path exists
+        if !path.exists() {
+            return Err(MediError::ScanPathNotFound {
+                path: path.to_path_buf(),
+            });
+        }
+
+        // Validate it's a file, not a directory
+        if !path.is_file() {
+            return Err(MediError::ParseFailed(format!(
+                "not a file: {}",
+                path.display()
+            )));
+        }
+
+        // Validate video extension
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+
+        if !VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+            return Err(MediError::ParseFailed(format!(
+                "not a video file: .{ext}"
+            )));
+        }
+
+        // Extract filename
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| MediError::NonUtf8Path {
+                path: path.to_path_buf(),
+            })?;
+
+        debug!(filename, "scanning single file");
+
+        // Parse without context (single file, no siblings)
+        let media_info = parser::parse_filename(filename)?;
+
+        // Select template and render proposed path
+        let template = self.select_template(&media_info.media_type);
+        let relative_path = self.template_engine.render(template, &media_info)?;
+
+        // Build full proposed path
+        let proposed_path = if let Some(ref output_dir) = self.config.general.output_dir {
+            output_dir.join(&relative_path)
+        } else {
+            path.parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join(&relative_path)
+        };
+
+        // Discover subtitles
+        let subtitle_discovery = if self.config.subtitles.enabled {
+            let proposed_stem = proposed_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let disc = SubtitleDiscovery::new(
+                self.config.subtitles.discovery.clone(),
+                self.config.subtitles.preferred_languages.clone(),
+            );
+            disc.discover_for_video(path, proposed_stem)
+        } else {
+            vec![]
+        };
+
+        // Determine status based on confidence
+        let (status, ambiguity_reason) = Self::confidence_to_status(&media_info.confidence);
+
+        Ok(ScanResult {
+            source_path: path.to_path_buf(),
+            media_info,
+            proposed_path,
+            subtitles: subtitle_discovery,
+            status,
+            ambiguity_reason,
+            alternatives: vec![],
+        })
+    }
+
+    /// Map parse confidence to scan status and optional ambiguity reason.
+    fn confidence_to_status(confidence: &ParseConfidence) -> (ScanStatus, Option<String>) {
+        match confidence {
+            ParseConfidence::Low => (ScanStatus::Ambiguous, Some("low confidence parse".to_string())),
+            ParseConfidence::Medium => (ScanStatus::Ambiguous, Some("medium confidence parse".to_string())),
+            ParseConfidence::High => (ScanStatus::Ok, None),
+        }
     }
 
     /// Filter scan results by the given criteria.
