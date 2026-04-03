@@ -8,11 +8,11 @@ pub mod config;
 pub mod error;
 pub mod fs_util;
 pub mod parser;
+pub mod subtitle;
 pub mod template;
 pub mod types;
 
 // These modules will be added by subsequent plans:
-// pub mod subtitle;
 // pub mod scanner;
 // pub mod history;
 // pub mod renamer;
@@ -21,5 +21,6 @@ pub use config::Config;
 pub use error::{MediError, Result};
 pub use fs_util::{path_to_utf8, safe_move};
 pub use parser::{parse_filename, parse_with_context};
+pub use subtitle::SubtitleDiscovery;
 pub use template::TemplateEngine;
 pub use types::*;
