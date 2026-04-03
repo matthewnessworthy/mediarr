@@ -699,4 +699,112 @@ mod tests {
             other => panic!("expected ScanPathNotDirectory, got: {other:?}"),
         }
     }
+
+    // -----------------------------------------------------------------------
+    // scan_file: single-file scanning
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_file_valid_video_returns_scan_result() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let video = source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(&video).unwrap();
+
+        assert_eq!(result.source_path, video);
+        assert!(
+            result.media_info.title.contains("Inception"),
+            "title should contain Inception, got: {}",
+            result.media_info.title
+        );
+        assert_eq!(result.media_info.media_type, MediaType::Movie);
+    }
+
+    #[test]
+    fn scan_file_nonexistent_returns_error() {
+        let output = TempDir::new().unwrap();
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(Path::new("/nonexistent/file/12345.mkv"));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MediError::ScanPathNotFound { .. } => {}
+            other => panic!("expected ScanPathNotFound, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scan_file_on_directory_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(dir.path());
+        assert!(result.is_err());
+        // Should error -- directories are not files
+        match result.unwrap_err() {
+            MediError::ParseFailed(_) => {}
+            other => panic!("expected ParseFailed for directory, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scan_file_produces_correct_proposed_path() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let video = source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(&video).unwrap();
+
+        // Proposed path should be under the output directory
+        assert!(
+            result.proposed_path.starts_with(output.path()),
+            "proposed_path {:?} should start with output dir {:?}",
+            result.proposed_path,
+            output.path()
+        );
+        assert!(!result.proposed_path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn scan_file_discovers_sidecar_subtitles() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let video_name = "The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv";
+        let video = source.path().join(video_name);
+        fs::write(&video, b"video").unwrap();
+        fs::write(
+            source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt"),
+            b"subtitle",
+        )
+        .unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(&video).unwrap();
+
+        assert!(
+            !result.subtitles.is_empty(),
+            "subtitles should be discovered for the video"
+        );
+    }
+
+    #[test]
+    fn scan_file_rejects_non_video_extension() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let txt_file = source.path().join("readme.txt");
+        fs::write(&txt_file, b"not a video").unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(&txt_file);
+        assert!(result.is_err(), "non-video file should return error");
+    }
 }
