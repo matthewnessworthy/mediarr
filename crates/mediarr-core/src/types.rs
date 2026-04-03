@@ -175,7 +175,7 @@ pub enum DiscoveryMethod {
 ///
 /// Lives in `types.rs` so both `config` and `subtitle` modules share one
 /// definition, avoiding type duplication.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DiscoveryToggles {
     /// Enable sidecar subtitle discovery.
     pub sidecar: bool,
