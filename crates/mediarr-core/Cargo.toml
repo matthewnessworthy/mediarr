@@ -19,6 +19,9 @@ sanitize-filename = "0.6.0"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+notify = "8.2.0"
+notify-debouncer-full = "0.7.0"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
