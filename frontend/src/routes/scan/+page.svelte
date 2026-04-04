@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invoke, Channel } from '@tauri-apps/api/core';
-	import type { ScanEvent, RenameResult } from '$lib/types';
+	import type { ScanEvent, RenameResult, MediaInfo } from '$lib/types';
 	import { scanState } from '$lib/state/scan.svelte.js';
 	import ScanTopBar from '$lib/components/scan/ScanTopBar.svelte';
 	import ScanBottomBar from '$lib/components/scan/ScanBottomBar.svelte';
@@ -69,17 +69,19 @@
 
 	/**
 	 * Build rename entries from selected scan results, including subtitle entries.
+	 * Video entries include media_info for accurate history recording.
 	 */
-	function getSelectedEntries(): { source_path: string; dest_path: string }[] {
-		const entries: { source_path: string; dest_path: string }[] = [];
+	function getSelectedEntries(): { source_path: string; dest_path: string; media_info?: MediaInfo }[] {
+		const entries: { source_path: string; dest_path: string; media_info?: MediaInfo }[] = [];
 		for (const result of scanState.results) {
 			if (!scanState.selectedPaths.has(result.source_path)) continue;
-			// Video file entry
+			// Video file entry with full media info
 			entries.push({
 				source_path: result.source_path,
 				dest_path: result.proposed_path,
+				media_info: result.media_info,
 			});
-			// Subtitle entries for this video
+			// Subtitle entries (no media_info needed)
 			for (const sub of result.subtitles) {
 				entries.push({
 					source_path: sub.source_path,

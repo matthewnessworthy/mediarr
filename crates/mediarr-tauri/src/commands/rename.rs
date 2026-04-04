@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -13,6 +14,9 @@ use crate::state::ManagedState;
 pub struct RenameEntry {
     pub source_path: String,
     pub dest_path: String,
+    /// Optional media info from scan results for accurate history recording.
+    #[serde(default)]
+    pub media_info: Option<mediarr_core::MediaInfo>,
 }
 
 /// Validate a rename plan without touching the filesystem.
@@ -38,6 +42,7 @@ pub fn dry_run_renames(
 /// Execute a rename plan, moving or copying files.
 ///
 /// Records successful renames in the history database for undo support.
+/// Uses real `MediaInfo` from scan results when available for accurate history.
 #[tauri::command]
 pub fn execute_renames(
     state: State<'_, ManagedState>,
@@ -45,6 +50,13 @@ pub fn execute_renames(
 ) -> CommandResult<Vec<RenameResult>> {
     let state = state.lock().map_err(|_| CommandError::StateLock)?;
     let renamer = Renamer::from_config(&state.config.general);
+
+    // Build source_path -> MediaInfo lookup before consuming entries
+    let media_info_map: HashMap<String, mediarr_core::MediaInfo> = entries
+        .iter()
+        .filter_map(|e| e.media_info.as_ref().map(|mi| (e.source_path.clone(), mi.clone())))
+        .collect();
+
     let plan = RenamePlan {
         entries: entries
             .into_iter()
@@ -75,12 +87,10 @@ pub fn execute_renames(
                     )
                 })
                 .unwrap_or_default();
-            Some(RenameRecord {
-                batch_id: batch_id.clone(),
-                timestamp: timestamp.clone(),
-                source_path: r.source_path.clone(),
-                dest_path: r.dest_path.clone(),
-                media_info: mediarr_core::MediaInfo {
+
+            let source_key = r.source_path.to_string_lossy().to_string();
+            let info = media_info_map.get(&source_key).cloned().unwrap_or_else(|| {
+                mediarr_core::MediaInfo {
                     title: String::new(),
                     media_type: mediarr_core::MediaType::Movie,
                     year: None,
@@ -94,7 +104,15 @@ pub fn execute_renames(
                     container: String::new(),
                     language: None,
                     confidence: mediarr_core::ParseConfidence::High,
-                },
+                }
+            });
+
+            Some(RenameRecord {
+                batch_id: batch_id.clone(),
+                timestamp: timestamp.clone(),
+                source_path: r.source_path.clone(),
+                dest_path: r.dest_path.clone(),
+                media_info: info,
                 file_size: meta.len(),
                 file_mtime: mtime,
             })
