@@ -10,20 +10,21 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@lucide/svelte": "^0.487.0",
     "@tauri-apps/api": "^2.10.0",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.0",
-    "bits-ui": "^1.3.0",
     "clsx": "^2.1.0",
     "tailwind-merge": "^3.0.0"
   },
   "devDependencies": {
+    "@internationalized/date": "^3.12.0",
+    "@lucide/svelte": "^1.7.0",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "^2.15.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.10.0",
+    "bits-ui": "^2.16.5",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "tailwind-variants": "^3.2.2",
