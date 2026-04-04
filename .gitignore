@@ -105,3 +105,12 @@ $RECYCLE.BIN/
 .superset/
 mediarr-prd.md
 skills-lock.json
+
+# Tauri generated
+**/gen/
+
+# Node
+node_modules/
+
+# Frontend build output
+frontend/build/
