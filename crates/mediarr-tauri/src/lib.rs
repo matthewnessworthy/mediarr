@@ -1,3 +1,4 @@
+mod commands;
 mod error;
 mod state;
 
@@ -9,7 +10,7 @@ use tracing_subscriber::EnvFilter;
 /// Entry point for the Tauri application.
 ///
 /// Initialises logging, loads config and history database, registers plugins,
-/// and starts the Tauri event loop.
+/// registers all IPC command handlers, and starts the Tauri event loop.
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -28,6 +29,25 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(Mutex::new(state::AppState { config, db }))
+        .invoke_handler(tauri::generate_handler![
+            commands::scan::scan_folder,
+            commands::scan::scan_folder_streaming,
+            commands::rename::dry_run_renames,
+            commands::rename::execute_renames,
+            commands::history::list_batches,
+            commands::history::check_undo,
+            commands::history::execute_undo,
+            commands::watcher::list_watchers,
+            commands::watcher::list_watcher_events,
+            commands::watcher::list_review_queue,
+            commands::watcher::update_review_status,
+            commands::watcher::start_watcher,
+            commands::watcher::stop_watcher,
+            commands::config::get_config,
+            commands::config::update_config,
+            commands::config::preview_template,
+            commands::config::validate_template,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
