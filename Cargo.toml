@@ -2,5 +2,6 @@
 members = [
     "crates/mediarr-core",
     "crates/mediarr-cli",
+    "crates/mediarr-tauri",
 ]
 resolver = "2"
