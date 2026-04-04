@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invoke, Channel } from '@tauri-apps/api/core';
-	import type { ScanEvent } from '$lib/types';
+	import type { ScanEvent, RenameResult } from '$lib/types';
 	import { scanState } from '$lib/state/scan.svelte.js';
 	import ScanTopBar from '$lib/components/scan/ScanTopBar.svelte';
 	import ScanBottomBar from '$lib/components/scan/ScanBottomBar.svelte';
@@ -10,6 +10,9 @@
 
 	let expandedPaths = $state<Set<string>>(new Set());
 	let scanError = $state<string | null>(null);
+	let dryRunResults = $state<RenameResult[] | null>(null);
+	let renameResults = $state<RenameResult[] | null>(null);
+	let executing = $state(false);
 
 	const hasResults = $derived(scanState.results.length > 0);
 	const showMain = $derived(hasResults || scanState.loading);
@@ -18,6 +21,8 @@
 		scanState.reset();
 		expandedPaths = new Set();
 		scanError = null;
+		dryRunResults = null;
+		renameResults = null;
 		scanState.folderPath = path;
 		scanState.loading = true;
 
@@ -62,36 +67,59 @@
 		expandedPaths = next;
 	}
 
-	async function handleDryRun() {
-		const entries = scanState.filteredResults
-			.filter((r) => scanState.selectedPaths.has(r.source_path))
-			.map((r) => ({
-				source: r.source_path,
-				destination: r.proposed_path,
-			}));
+	/**
+	 * Build rename entries from selected scan results, including subtitle entries.
+	 */
+	function getSelectedEntries(): { source_path: string; dest_path: string }[] {
+		const entries: { source_path: string; dest_path: string }[] = [];
+		for (const result of scanState.results) {
+			if (!scanState.selectedPaths.has(result.source_path)) continue;
+			// Video file entry
+			entries.push({
+				source_path: result.source_path,
+				dest_path: result.proposed_path,
+			});
+			// Subtitle entries for this video
+			for (const sub of result.subtitles) {
+				entries.push({
+					source_path: sub.source_path,
+					dest_path: sub.proposed_path,
+				});
+			}
+		}
+		return entries;
+	}
 
+	async function handleDryRun() {
+		executing = true;
+		dryRunResults = null;
+		renameResults = null;
 		try {
-			const results = await invoke<Array<{ source_path: string; dest_path: string; success: boolean; error: string | null }>>('dry_run_renames', { entries });
-			// TODO: Display dry run results in a modal or panel
-			console.log('Dry run results:', results);
+			const entries = getSelectedEntries();
+			dryRunResults = await invoke<RenameResult[]>('dry_run_renames', { entries });
 		} catch (e) {
-			console.error('Dry run failed:', e);
+			scanError = e instanceof Error ? e.message : String(e);
+		} finally {
+			executing = false;
 		}
 	}
 
 	async function handleApplyRenames() {
-		const entries = scanState.filteredResults
-			.filter((r) => scanState.selectedPaths.has(r.source_path))
-			.map((r) => ({
-				source: r.source_path,
-				destination: r.proposed_path,
-			}));
-
+		executing = true;
+		renameResults = null;
 		try {
-			await invoke('execute_renames', { entries });
-			// After successful rename, re-scan or clear results
+			const entries = getSelectedEntries();
+			renameResults = await invoke<RenameResult[]>('execute_renames', { entries });
+			// Remove successfully renamed files from the results list
+			const succeeded = new Set(
+				renameResults.filter((r) => r.success).map((r) => r.source_path)
+			);
+			scanState.results = scanState.results.filter((r) => !succeeded.has(r.source_path));
+			scanState.deselectAll();
 		} catch (e) {
-			console.error('Rename failed:', e);
+			scanError = e instanceof Error ? e.message : String(e);
+		} finally {
+			executing = false;
 		}
 	}
 </script>
@@ -135,7 +163,13 @@
 		</div>
 
 		<!-- Bottom bar with selection and actions -->
-		<ScanBottomBar onDryRun={handleDryRun} onApplyRenames={handleApplyRenames} />
+		<ScanBottomBar
+			onDryRun={handleDryRun}
+			onApplyRenames={handleApplyRenames}
+			{dryRunResults}
+			{renameResults}
+			{executing}
+		/>
 	{:else}
 		<!-- Empty state -->
 		<EmptyState onSelect={startScan} />
