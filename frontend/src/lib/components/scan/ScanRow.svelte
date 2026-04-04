@@ -1,10 +1,13 @@
 <script lang="ts">
-	import type { ScanResult } from '$lib/types';
+	import type { ScanResult, MediaInfo, Config } from '$lib/types';
 	import { cn } from '$lib/utils.js';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { invoke } from '@tauri-apps/api/core';
+	import { scanState } from '$lib/state/scan.svelte.js';
 	import MediaBadge from './MediaBadge.svelte';
 	import MetadataPills from './MetadataPills.svelte';
 	import SubtitleTree from './SubtitleTree.svelte';
+	import AmbiguityPanel from './AmbiguityPanel.svelte';
 	import { ChevronRight } from '@lucide/svelte';
 
 	const {
@@ -48,6 +51,35 @@
 
 	function handleCheckboxClick(e: MouseEvent) {
 		e.stopPropagation();
+	}
+
+	async function handleResolve(chosen: MediaInfo) {
+		// Get the template for this media type from config
+		const config = await invoke<Config>('get_config');
+		const template =
+			chosen.media_type === 'Movie'
+				? config.templates.movie
+				: chosen.media_type === 'Anime'
+					? config.templates.anime
+					: config.templates.series;
+		const newPath = await invoke<string>('preview_template', {
+			template,
+			mediaInfo: chosen,
+		});
+
+		// Update the result in scanState
+		const idx = scanState.results.findIndex((r) => r.source_path === result.source_path);
+		if (idx !== -1) {
+			scanState.results[idx] = {
+				...scanState.results[idx],
+				media_info: chosen,
+				proposed_path: newPath,
+				status: 'Ok',
+				ambiguity_reason: null,
+				alternatives: [],
+			};
+			scanState.results = [...scanState.results]; // trigger reactivity
+		}
 	}
 </script>
 
@@ -134,6 +166,16 @@
 				<div class="px-4 pb-3 ml-8 pl-4">
 					<span class="text-xs text-muted-foreground/50">No subtitles found</span>
 				</div>
+			{/if}
+
+			<!-- Ambiguity resolution panel -->
+			{#if isAmbiguous && expanded}
+				<AmbiguityPanel
+					currentInfo={result.media_info}
+					ambiguityReason={result.ambiguity_reason}
+					alternatives={result.alternatives}
+					onResolve={handleResolve}
+				/>
 			{/if}
 		</div>
 	</div>
