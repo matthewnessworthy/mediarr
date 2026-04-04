@@ -85,7 +85,7 @@
 
 <div
 	class={cn(
-		'border-b border-border/50 transition-colors duration-150',
+		'border-b border-border/50',
 		isAmbiguous && 'bg-amber-500/[0.03]',
 		selected && 'bg-accent/30'
 	)}
@@ -93,7 +93,8 @@
 	<!-- Collapsed row -->
 	<button
 		type="button"
-		class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/20 transition-colors duration-100"
+		class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/20 transition-colors focus-ring"
+		style="transition-duration: var(--duration-fast);"
 		onclick={handleRowClick}
 	>
 		<!-- Checkbox -->
@@ -106,9 +107,10 @@
 		<!-- Expand indicator -->
 		<ChevronRight
 			class={cn(
-				'size-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-150',
+				'size-3.5 shrink-0 text-muted-foreground/50 transition-transform',
 				expanded && 'rotate-90'
 			)}
+			style="transition-duration: var(--duration-fast);"
 		/>
 
 		<!-- Media type badge -->
@@ -127,7 +129,7 @@
 
 		<!-- Subtitle count -->
 		{#if result.subtitles.length > 0}
-			<span class="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/60">
+			<span class="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70 bg-muted/40">
 				{result.subtitles.length} sub{result.subtitles.length !== 1 ? 's' : ''}
 			</span>
 		{/if}
@@ -152,12 +154,9 @@
 		</div>
 	</button>
 
-	<!-- Expanded content with smooth transition -->
-	<div
-		class="grid transition-[grid-template-rows] duration-200 ease-out"
-		style="grid-template-rows: {expanded ? '1fr' : '0fr'};"
-	>
-		<div class="overflow-hidden">
+	<!-- Expanded content with smooth grid-template-rows transition -->
+	<div class={cn('expandable', expanded && 'expanded')}>
+		<div>
 			{#if result.subtitles.length > 0}
 				<div class="px-4 pb-3">
 					<SubtitleTree subtitles={result.subtitles} />

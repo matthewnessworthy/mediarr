@@ -28,6 +28,19 @@
 				return String(event.action);
 		}
 	}
+
+	function borderColor(action: string): string {
+		switch (action) {
+			case 'renamed':
+				return 'border-l-green-500/60';
+			case 'queued':
+				return 'border-l-amber-500/60';
+			case 'error':
+				return 'border-l-destructive/60';
+			default:
+				return 'border-l-border';
+		}
+	}
 </script>
 
 {#if events.length === 0}
@@ -37,7 +50,7 @@
 {:else}
 	<div class="max-h-80 overflow-y-auto">
 		{#each events as event}
-			<div class="flex items-start gap-3 py-2 px-1 text-xs">
+			<div class="flex items-start gap-3 py-2 px-3 text-xs border-l-2 {borderColor(event.action)}">
 				{#if event.action === 'renamed'}
 					<Check class="mt-0.5 size-3.5 shrink-0 text-green-500" />
 				{:else if event.action === 'queued'}

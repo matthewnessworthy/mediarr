@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
-	import { Plus } from '@lucide/svelte';
+	import { Plus, Eye } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { watcherState } from '$lib/state/watcher.svelte';
 	import WatcherCard from '$lib/components/watcher/WatcherCard.svelte';
@@ -57,28 +57,30 @@
 				</span>
 			{/if}
 		</div>
-		<Button variant="outline" size="sm" onclick={() => (addDialogOpen = true)}>
+		<Button variant="outline" size="sm" onclick={() => (addDialogOpen = true)} class="focus-ring">
 			<Plus class="size-3.5" />
 			Add Folder
 		</Button>
 	</div>
 
 	{#if watcherState.loading}
-		<div class="space-y-4">
-			{#each { length: 3 } as _}
-				<div class="flex items-center gap-3 py-3">
-					<div class="size-2 animate-pulse rounded-full bg-muted"></div>
+		<div class="space-y-1">
+			{#each { length: 3 } as _, i}
+				<div class="flex items-center gap-3 py-3 border-b border-border/50">
+					<div class="skeleton size-2 rounded-full"></div>
 					<div class="flex-1 space-y-2">
-						<div class="h-4 w-56 animate-pulse rounded bg-muted"></div>
-						<div class="h-3 w-32 animate-pulse rounded bg-muted"></div>
+						<div class="skeleton h-4" style="width: {180 + i * 40}px;"></div>
+						<div class="skeleton h-3" style="width: {100 + i * 20}px;"></div>
 					</div>
-					<div class="h-5 w-14 animate-pulse rounded bg-muted"></div>
+					<div class="skeleton h-5 w-20 rounded-full"></div>
+					<div class="skeleton h-5 w-9 rounded-full"></div>
 				</div>
 			{/each}
 		</div>
 	{:else if watcherState.watchers.length === 0}
-		<div class="py-16 text-center">
-			<p class="text-sm text-muted-foreground">
+		<div class="flex flex-col items-center justify-center py-24">
+			<Eye class="size-10 mb-5 text-muted-foreground/30" />
+			<p class="text-sm text-muted-foreground text-center leading-relaxed max-w-xs">
 				No folders being watched. Add a folder to start monitoring for new media files.
 			</p>
 		</div>

@@ -134,8 +134,8 @@
 	/>
 
 	{#if preview}
-		<div class="rounded-md bg-muted/50 px-3 py-2">
-			<p class="text-xs text-muted-foreground mb-1">Preview</p>
+		<div class="rounded-md border border-border/50 bg-muted/30 px-3 py-2">
+			<p class="text-[11px] uppercase tracking-wide text-muted-foreground/60 mb-1">Preview</p>
 			<p class="font-mono text-sm text-foreground break-all">{preview}</p>
 		</div>
 	{/if}
@@ -153,9 +153,11 @@
 	<Collapsible.Root bind:open={variablesOpen}>
 		<Collapsible.Trigger
 			class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+			style="transition-duration: var(--duration-fast);"
 		>
 			<ChevronDown
-				class="size-3 transition-transform duration-150 {variablesOpen ? 'rotate-0' : '-rotate-90'}"
+				class="size-3 transition-transform {variablesOpen ? 'rotate-0' : '-rotate-90'}"
+				style="transition-duration: var(--duration-fast);"
 			/>
 			Available variables
 		</Collapsible.Trigger>

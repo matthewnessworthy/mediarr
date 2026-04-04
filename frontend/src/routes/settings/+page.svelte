@@ -56,7 +56,7 @@
 			<p class="mt-1 text-sm text-muted-foreground">Configure templates, subtitles, and preferences.</p>
 		</div>
 		{#if configState.config}
-			<Button onclick={saveConfig} disabled={configState.saving || !hasUnsavedChanges}>
+			<Button onclick={saveConfig} disabled={configState.saving || !hasUnsavedChanges} class="focus-ring">
 				{#if configState.saving}
 					<Loader2 class="size-4 animate-spin" />
 					Saving...
@@ -69,14 +69,32 @@
 	</div>
 
 	{#if configState.loading}
-		<div class="space-y-8">
-			{#each [1, 2, 3] as _}
-				<div class="space-y-3">
-					<div class="h-4 w-32 rounded bg-muted animate-pulse"></div>
-					<div class="h-8 w-full rounded bg-muted animate-pulse"></div>
-					<div class="h-8 w-full rounded bg-muted animate-pulse"></div>
-				</div>
-			{/each}
+		<div class="space-y-10">
+			<!-- Templates skeleton -->
+			<section class="space-y-4">
+				<div class="skeleton h-4 w-32"></div>
+				{#each [1, 2, 3] as _, i}
+					<div class="space-y-2">
+						<div class="skeleton h-3.5" style="width: {80 + i * 15}px;"></div>
+						<div class="skeleton h-9 w-full"></div>
+						<div class="skeleton h-14 w-full rounded-md"></div>
+					</div>
+				{/each}
+			</section>
+			<div class="h-px bg-border"></div>
+			<!-- Subtitles skeleton -->
+			<section class="space-y-3">
+				<div class="skeleton h-4 w-20"></div>
+				<div class="skeleton h-9 w-full"></div>
+				<div class="skeleton h-9 w-3/4"></div>
+			</section>
+			<div class="h-px bg-border"></div>
+			<!-- General skeleton -->
+			<section class="space-y-3">
+				<div class="skeleton h-4 w-16"></div>
+				<div class="skeleton h-9 w-full"></div>
+				<div class="skeleton h-9 w-2/3"></div>
+			</section>
 		</div>
 	{:else if configState.config}
 		<div class="space-y-10">
@@ -133,7 +151,7 @@
 		<!-- Bottom save button -->
 		{#if hasUnsavedChanges}
 			<div class="mt-8 pt-6 border-t border-border">
-				<Button onclick={saveConfig} disabled={configState.saving}>
+				<Button onclick={saveConfig} disabled={configState.saving} class="focus-ring">
 					{#if configState.saving}
 						<Loader2 class="size-4 animate-spin" />
 						Saving...

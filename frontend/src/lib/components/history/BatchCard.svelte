@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { RotateCcw } from '@lucide/svelte';
+	import { RotateCcw, ChevronDown } from '@lucide/svelte';
+	import { cn } from '$lib/utils.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '$lib/components/ui/tooltip';
 	import RenameDetail from './RenameDetail.svelte';
@@ -56,7 +57,8 @@
 	<button
 		type="button"
 		onclick={onToggle}
-		class="flex w-full items-center gap-4 px-1 py-3 text-left transition-colors duration-150 hover:bg-accent/30"
+		class="flex w-full items-center gap-4 px-1 py-3 text-left transition-colors hover:bg-accent/20 focus-ring"
+		style="transition-duration: var(--duration-fast);"
 	>
 		<div class="flex-1 min-w-0">
 			<div class="flex items-baseline gap-2">
@@ -107,22 +109,17 @@
 			</TooltipProvider>
 		{/if}
 
-		<svg
-			class="size-4 shrink-0 text-muted-foreground/50 transition-transform duration-200 {expanded ? 'rotate-180' : ''}"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-		>
-			<path d="m6 9 6 6 6-6" />
-		</svg>
+		<ChevronDown
+			class={cn(
+				'size-4 shrink-0 text-muted-foreground/50 transition-transform',
+				expanded && 'rotate-180'
+			)}
+			style="transition-duration: var(--duration-normal);"
+		/>
 	</button>
 
-	<div
-		class="grid transition-[grid-template-rows] duration-200 ease-out"
-		style="grid-template-rows: {expanded ? '1fr' : '0fr'}"
-	>
-		<div class="overflow-hidden">
+	<div class={cn('expandable', expanded && 'expanded')}>
+		<div>
 			{#if batch.entries.length > 0}
 				<div class="px-1 pb-3 pl-4">
 					{#each batch.entries as record}

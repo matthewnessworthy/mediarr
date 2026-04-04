@@ -54,7 +54,7 @@
 {#if compact}
 	<!-- Compact mode: button + recent dropdown -->
 	<div class="flex items-center gap-1.5">
-		<Button variant="outline" size="sm" onclick={openDialog}>
+		<Button variant="outline" size="sm" onclick={openDialog} class="focus-ring">
 			<FolderOpen class="size-3.5" data-icon="inline-start" />
 			Open Folder
 		</Button>
@@ -62,7 +62,7 @@
 		{#if scanState.recentPaths.length > 0}
 			<Popover.Root bind:open={recentOpen}>
 				<Popover.Trigger>
-					<Button variant="ghost" size="icon-sm">
+					<Button variant="ghost" size="icon-sm" class="focus-ring">
 						<Clock class="size-3.5" />
 					</Button>
 				</Popover.Trigger>
@@ -71,6 +71,7 @@
 						<button
 							type="button"
 							class="w-full text-left px-2 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-sm truncate transition-colors"
+							style="transition-duration: var(--duration-fast);"
 							title={path}
 							onclick={() => selectRecent(path)}
 						>
@@ -87,9 +88,10 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class={cn(
-				'w-full max-w-lg rounded-lg border border-dashed border-border/60 px-8 py-12 text-center transition-colors duration-150',
+				'w-full max-w-lg rounded-lg border border-dashed border-border/60 px-8 py-12 text-center transition-colors',
 				dragOver && 'border-foreground/40 bg-accent/20'
 			)}
+			style="transition-duration: var(--duration-normal);"
 			ondragover={(e) => {
 				e.preventDefault();
 				dragOver = true;
@@ -99,9 +101,9 @@
 			role="region"
 			aria-label="Drop zone for media folders"
 		>
-			<FolderOpen class="size-8 mx-auto mb-4 text-muted-foreground/40" />
+			<FolderOpen class="size-8 mx-auto mb-4 text-muted-foreground/30" />
 			<p class="text-sm text-muted-foreground mb-4">Drop a folder here to scan</p>
-			<Button variant="outline" size="sm" onclick={openDialog}>
+			<Button variant="outline" size="sm" onclick={openDialog} class="focus-ring">
 				<FolderOpen class="size-3.5" data-icon="inline-start" />
 				Browse
 			</Button>
@@ -114,7 +116,8 @@
 					{#each scanState.recentPaths as path}
 						<button
 							type="button"
-							class="w-full text-left px-3 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-md truncate transition-colors"
+							class="w-full text-left px-3 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-md truncate transition-colors focus-ring"
+							style="transition-duration: var(--duration-fast);"
 							title={path}
 							onclick={() => onSelect(path)}
 						>
