@@ -7,8 +7,9 @@
 	import { watcherState } from '$lib/state/watcher.svelte';
 	import WatcherCard from '$lib/components/watcher/WatcherCard.svelte';
 	import ActivityLog from '$lib/components/watcher/ActivityLog.svelte';
+	import ReviewQueue from '$lib/components/watcher/ReviewQueue.svelte';
 	import AddWatcherDialog from '$lib/components/watcher/AddWatcherDialog.svelte';
-	import type { WatcherConfig, WatcherEvent } from '$lib/types';
+	import type { WatcherConfig, WatcherEvent, ReviewQueueEntry } from '$lib/types';
 
 	let unlisten: (() => void) | null = null;
 	let addDialogOpen = $state(false);
@@ -30,9 +31,18 @@
 				watchPath: null,
 				limit: 50,
 			});
+			watcherState.reviewQueue = await invoke<ReviewQueueEntry[]>('list_review_queue', {
+				watchPath: null,
+			});
 		} finally {
 			watcherState.loading = false;
 		}
+	}
+
+	async function refreshReviewQueue() {
+		watcherState.reviewQueue = await invoke<ReviewQueueEntry[]>('list_review_queue', {
+			watchPath: null,
+		});
 	}
 
 	onMount(async () => {
@@ -41,6 +51,10 @@
 		// Listen for real-time watcher events per D-09
 		unlisten = await listen<WatcherEvent>('watcher-event', (event) => {
 			watcherState.events = [event.payload, ...watcherState.events].slice(0, 100);
+			// Refresh review queue when new items are queued
+			if (event.payload.action === 'queued') {
+				refreshReviewQueue();
+			}
 		});
 	});
 
@@ -90,6 +104,16 @@
 				<WatcherCard {watcher} eventCounts={eventCountsFor(watcher.path)} />
 			{/each}
 		</div>
+
+		{#if watcherState.reviewQueue.filter(e => e.status === 'pending').length > 0}
+			<div class="mb-8">
+				<h3 class="mb-3 text-sm font-medium text-muted-foreground">Review Queue</h3>
+				<ReviewQueue
+					entries={watcherState.reviewQueue.filter(e => e.status === 'pending')}
+					onChanged={refreshReviewQueue}
+				/>
+			</div>
+		{/if}
 
 		<div>
 			<h3 class="mb-3 text-sm font-medium text-muted-foreground">Activity</h3>
