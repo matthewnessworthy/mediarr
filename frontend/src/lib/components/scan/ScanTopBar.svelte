@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { scanState } from '$lib/state/scan.svelte.js';
 	import FolderSelector from './FolderSelector.svelte';
-	import { Search } from '@lucide/svelte';
+	import { Search, X } from '@lucide/svelte';
 
 	const { onSelect }: { onSelect: (path: string) => void } = $props();
 
@@ -28,17 +28,35 @@
 	{/if}
 
 	<div class="flex items-center gap-4 px-4 py-3 border-b border-border">
-		<!-- Folder path and count -->
-		<div class="flex items-center gap-2 min-w-0">
-			<span
-				class="text-sm font-mono text-muted-foreground truncate max-w-80"
-				title={scanState.folderPath}
-			>
-				{scanState.folderPath}
-			</span>
+		<!-- Folder tags and count -->
+		<div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+			{#each scanState.folderPaths as path}
+				<span
+					class="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-0.5 text-xs font-mono text-muted-foreground max-w-48 truncate"
+					title={path}
+				>
+					{path.split('/').pop() || path}
+					<button
+						type="button"
+						class="ml-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+						style="transition-duration: var(--duration-fast);"
+						aria-label="Remove folder {path.split('/').pop() || path}"
+						onclick={(e) => { e.stopPropagation(); scanState.removeFolder(path); }}
+					>
+						<X class="size-3" />
+					</button>
+				</span>
+			{/each}
 			<span class="text-xs text-muted-foreground/60 shrink-0">
 				{scanState.results.length} file{scanState.results.length !== 1 ? 's' : ''}
 			</span>
+			{#if scanState.loading && scanState.folderPaths.length > 1 && scanState.scanningFolderIndex >= 0}
+				<span class="text-xs text-muted-foreground/60 shrink-0">
+					Scanning folder {scanState.scanningFolderIndex + 1} of {scanState.folderPaths.length}...
+				</span>
+			{:else if scanState.loading}
+				<span class="text-xs text-muted-foreground/60 shrink-0 animate-pulse">Scanning...</span>
+			{/if}
 		</div>
 
 		<!-- Spacer -->
@@ -54,6 +72,18 @@
 				bind:value={scanState.searchQuery}
 			/>
 		</div>
+
+		<!-- Clear button -->
+		{#if scanState.folderPaths.length > 0}
+			<button
+				type="button"
+				class="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+				style="transition-duration: var(--duration-fast);"
+				onclick={() => { scanState.reset(); }}
+			>
+				Clear
+			</button>
+		{/if}
 
 		<!-- Folder selector (compact mode) -->
 		<FolderSelector {onSelect} compact />

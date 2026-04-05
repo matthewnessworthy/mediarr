@@ -15,46 +15,75 @@
 	let executing = $state(false);
 
 	const hasResults = $derived(scanState.results.length > 0);
-	const showMain = $derived(hasResults || scanState.loading);
+	const showMain = $derived(
+		scanState.results.length > 0 || scanState.loading || scanState.folderPaths.length > 0
+	);
 
-	async function startScan(path: string) {
-		scanState.reset();
+	async function startScan(triggerPath?: string) {
+		// If a path was provided (from folder selector), it's already been added to folderPaths
+		// by FolderSelector. Just ensure recent paths are updated.
+		if (triggerPath && !scanState.recentPaths.includes(triggerPath)) {
+			scanState.recentPaths = [triggerPath, ...scanState.recentPaths.slice(0, 4)];
+		}
+
+		// Nothing to scan if no folders
+		if (scanState.folderPaths.length === 0) return;
+
+		// Reset scan state but preserve folderPaths and recentPaths
+		const paths = [...scanState.folderPaths];
+		const recent = [...scanState.recentPaths];
+		scanState.results = [];
+		scanState.selectedPaths = new Set();
+		scanState.scanProgress = { scanned: 0, total: 0 };
+		scanState.filterType = null;
+		scanState.filterStatus = null;
+		scanState.searchQuery = '';
 		expandedPaths = new Set();
 		scanError = null;
 		dryRunResults = null;
 		renameResults = null;
-		scanState.folderPath = path;
 		scanState.loading = true;
+		scanState.folderPaths = paths;
+		scanState.recentPaths = recent;
 
-		// Add to recent paths
-		if (!scanState.recentPaths.includes(path)) {
-			scanState.recentPaths = [path, ...scanState.recentPaths.slice(0, 4)];
-		}
+		// Scan each folder sequentially
+		for (let i = 0; i < paths.length; i++) {
+			scanState.scanningFolderIndex = i;
+			const path = paths[i];
 
-		const onEvent = new Channel<ScanEvent>();
-		onEvent.onmessage = (message: ScanEvent) => {
-			if (message.event === 'result') {
-				scanState.results = [...scanState.results, message.data.scan_result];
-			} else if (message.event === 'progress') {
-				scanState.scanProgress = {
-					scanned: message.data.scanned,
-					total: message.data.total_estimate,
-				};
-			} else if (message.event === 'complete') {
-				scanState.loading = false;
-				scanState.selectAll();
-			} else if (message.event === 'error') {
-				scanState.loading = false;
-				scanError = message.data.message;
+			const onEvent = new Channel<ScanEvent>();
+			onEvent.onmessage = (message: ScanEvent) => {
+				if (message.event === 'result') {
+					scanState.results = [...scanState.results, message.data.scan_result];
+				} else if (message.event === 'progress') {
+					scanState.scanProgress = {
+						scanned: scanState.scanProgress.scanned + message.data.scanned,
+						total: scanState.scanProgress.total + message.data.total_estimate,
+					};
+				} else if (message.event === 'error') {
+					// Log per-folder error but continue to next folder
+					const folderName = path.split('/').pop() || path;
+					scanError = scanError
+						? `${scanError}\nCould not scan ${folderName}: ${message.data.message}`
+						: `Could not scan ${folderName}: ${message.data.message}`;
+				}
+				// 'complete' per folder -- just continue to next folder
+			};
+
+			try {
+				await invoke('scan_folder_streaming', { path, onEvent });
+			} catch (e) {
+				const folderName = path.split('/').pop() || path;
+				const msg = e instanceof Error ? e.message : String(e);
+				scanError = scanError
+					? `${scanError}\nCould not scan ${folderName}: ${msg}`
+					: `Could not scan ${folderName}: ${msg}`;
 			}
-		};
-
-		try {
-			await invoke('scan_folder_streaming', { path, onEvent });
-		} catch (e) {
-			scanState.loading = false;
-			scanError = e instanceof Error ? e.message : String(e);
 		}
+
+		scanState.scanningFolderIndex = -1;
+		scanState.loading = false;
+		scanState.selectAll();
 	}
 
 	function toggleExpand(path: string) {
