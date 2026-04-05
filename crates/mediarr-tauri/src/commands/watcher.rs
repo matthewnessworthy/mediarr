@@ -136,9 +136,13 @@ pub fn start_watcher(state: State<'_, ManagedState>, path: String) -> CommandRes
 
     info!(path = %path, "watcher started");
 
-    state
-        .active_watchers
-        .insert(path, WatcherHandle { shutdown_tx, thread_handle });
+    state.active_watchers.insert(
+        path,
+        WatcherHandle {
+            shutdown_tx,
+            thread_handle,
+        },
+    );
 
     Ok(())
 }

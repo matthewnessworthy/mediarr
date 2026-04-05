@@ -175,12 +175,13 @@ impl HistoryDb {
         let records = stmt
             .query_map(params![batch_id], |row| {
                 let media_json: String = row.get(4)?;
-                let media_info: MediaInfo = serde_json::from_str(&media_json)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
+                let media_info: MediaInfo = serde_json::from_str(&media_json).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
                         4,
                         rusqlite::types::Type::Text,
                         Box::new(e),
-                    ))?;
+                    )
+                })?;
 
                 Ok(RenameRecord {
                     batch_id: row.get(0)?,
@@ -379,7 +380,7 @@ impl HistoryDb {
 
             let mut stmt = self.conn.prepare(&query)?;
             let events = stmt
-                .query_map(params![watch_path_str], |row| Self::map_watcher_event_row(row))?
+                .query_map(params![watch_path_str], Self::map_watcher_event_row)?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(events)
         } else {
@@ -395,7 +396,7 @@ impl HistoryDb {
 
             let mut stmt = self.conn.prepare(&query)?;
             let events = stmt
-                .query_map([], |row| Self::map_watcher_event_row(row))?
+                .query_map([], Self::map_watcher_event_row)?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(events)
         }
@@ -510,9 +511,10 @@ impl HistoryDb {
         );
 
         let mut stmt = self.conn.prepare(&query)?;
-        let params: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
         let entries = stmt
-            .query_map(params.as_slice(), |row| Self::map_review_queue_row(row))?
+            .query_map(params.as_slice(), Self::map_review_queue_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(entries)
@@ -531,10 +533,8 @@ impl HistoryDb {
 
     /// Remove a review queue entry by ID.
     pub fn remove_review_entry(&self, id: i64) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM review_queue WHERE id = ?1",
-            params![id],
-        )?;
+        self.conn
+            .execute("DELETE FROM review_queue WHERE id = ?1", params![id])?;
         debug!(id, "removed review queue entry");
         Ok(())
     }
@@ -609,7 +609,9 @@ mod tests {
             .conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='rename_history'")
             .unwrap();
-        let tables: Vec<String> = stmt.query_map([], |row| row.get(0)).unwrap()
+        let tables: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
             .filter_map(|r| r.ok())
             .collect();
         assert_eq!(tables, vec!["rename_history"]);
@@ -619,7 +621,9 @@ mod tests {
             .conn
             .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")
             .unwrap();
-        let indexes: Vec<String> = stmt.query_map([], |row| row.get(0)).unwrap()
+        let indexes: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
             .filter_map(|r| r.ok())
             .collect();
         assert!(indexes.contains(&"idx_batch_id".to_string()));
@@ -633,8 +637,18 @@ mod tests {
 
         let batch_id = HistoryDb::generate_batch_id();
         let entries = vec![
-            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
-            make_record(&batch_id, Path::new("/src/b.mkv"), Path::new("/dst/b.mkv"), 2000),
+            make_record(
+                &batch_id,
+                Path::new("/src/a.mkv"),
+                Path::new("/dst/a.mkv"),
+                1000,
+            ),
+            make_record(
+                &batch_id,
+                Path::new("/src/b.mkv"),
+                Path::new("/dst/b.mkv"),
+                2000,
+            ),
         ];
 
         db.record_batch(&entries).unwrap();
@@ -654,9 +668,24 @@ mod tests {
 
         let batch_id = HistoryDb::generate_batch_id();
         let entries = vec![
-            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
-            make_record(&batch_id, Path::new("/src/b.mkv"), Path::new("/dst/b.mkv"), 2000),
-            make_record(&batch_id, Path::new("/src/c.mkv"), Path::new("/dst/c.mkv"), 3000),
+            make_record(
+                &batch_id,
+                Path::new("/src/a.mkv"),
+                Path::new("/dst/a.mkv"),
+                1000,
+            ),
+            make_record(
+                &batch_id,
+                Path::new("/src/b.mkv"),
+                Path::new("/dst/b.mkv"),
+                2000,
+            ),
+            make_record(
+                &batch_id,
+                Path::new("/src/c.mkv"),
+                Path::new("/dst/c.mkv"),
+                3000,
+            ),
         ];
 
         db.record_batch(&entries).unwrap();
@@ -674,15 +703,23 @@ mod tests {
 
         // Insert older batch
         let batch_old = "batch-old".to_string();
-        let mut old_record =
-            make_record(&batch_old, Path::new("/src/old.mkv"), Path::new("/dst/old.mkv"), 100);
+        let mut old_record = make_record(
+            &batch_old,
+            Path::new("/src/old.mkv"),
+            Path::new("/dst/old.mkv"),
+            100,
+        );
         old_record.timestamp = "2024-01-01T00:00:00Z".to_string();
         db.record_batch(&[old_record]).unwrap();
 
         // Insert newer batch
         let batch_new = "batch-new".to_string();
-        let mut new_record =
-            make_record(&batch_new, Path::new("/src/new.mkv"), Path::new("/dst/new.mkv"), 200);
+        let mut new_record = make_record(
+            &batch_new,
+            Path::new("/src/new.mkv"),
+            Path::new("/dst/new.mkv"),
+            200,
+        );
         new_record.timestamp = "2024-06-15T00:00:00Z".to_string();
         db.record_batch(&[new_record]).unwrap();
 
@@ -720,8 +757,18 @@ mod tests {
 
         let batch_id = HistoryDb::generate_batch_id();
         let entries = vec![
-            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
-            make_record(&batch_id, Path::new("/src/b.mkv"), Path::new("/dst/b.mkv"), 2000),
+            make_record(
+                &batch_id,
+                Path::new("/src/a.mkv"),
+                Path::new("/dst/a.mkv"),
+                1000,
+            ),
+            make_record(
+                &batch_id,
+                Path::new("/src/b.mkv"),
+                Path::new("/dst/b.mkv"),
+                2000,
+            ),
         ];
 
         db.record_batch(&entries).unwrap();
@@ -775,7 +822,10 @@ mod tests {
         let eligibility = db.check_undo_eligible(&batch_id).unwrap();
         assert!(!eligibility.eligible);
         assert_eq!(eligibility.ineligible_reasons.len(), 1);
-        assert_eq!(eligibility.ineligible_reasons[0].reason, "destination file missing");
+        assert_eq!(
+            eligibility.ineligible_reasons[0].reason,
+            "destination file missing"
+        );
     }
 
     #[test]
@@ -803,7 +853,10 @@ mod tests {
         let eligibility = db.check_undo_eligible(&batch_id).unwrap();
         assert!(!eligibility.eligible);
         assert_eq!(eligibility.ineligible_reasons.len(), 1);
-        assert_eq!(eligibility.ineligible_reasons[0].reason, "source location occupied");
+        assert_eq!(
+            eligibility.ineligible_reasons[0].reason,
+            "source location occupied"
+        );
     }
 
     #[test]
@@ -874,7 +927,12 @@ mod tests {
 
         let batch_id = HistoryDb::generate_batch_id();
         let original_info = test_media_info();
-        let record = make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 100);
+        let record = make_record(
+            &batch_id,
+            Path::new("/src/a.mkv"),
+            Path::new("/dst/a.mkv"),
+            100,
+        );
 
         db.record_batch(&[record]).unwrap();
 
@@ -927,9 +985,18 @@ mod tests {
             .unwrap()
             .filter_map(|r| r.ok())
             .collect();
-        assert!(tables.contains(&"watcher_events".to_string()), "watcher_events table should exist");
-        assert!(tables.contains(&"review_queue".to_string()), "review_queue table should exist");
-        assert!(tables.contains(&"rename_history".to_string()), "rename_history should still exist");
+        assert!(
+            tables.contains(&"watcher_events".to_string()),
+            "watcher_events table should exist"
+        );
+        assert!(
+            tables.contains(&"review_queue".to_string()),
+            "review_queue table should exist"
+        );
+        assert!(
+            tables.contains(&"rename_history".to_string()),
+            "rename_history should still exist"
+        );
 
         // Verify watcher indexes exist
         let mut stmt = db
@@ -951,7 +1018,11 @@ mod tests {
     // Watcher event CRUD
     // -----------------------------------------------------------------------
 
-    fn make_watcher_event(watch_path: &Path, filename: &str, action: WatcherAction) -> WatcherEvent {
+    fn make_watcher_event(
+        watch_path: &Path,
+        filename: &str,
+        action: WatcherAction,
+    ) -> WatcherEvent {
         WatcherEvent {
             id: None,
             timestamp: "2024-06-15T10:00:00Z".to_string(),
@@ -989,10 +1060,18 @@ mod tests {
         let wp1 = Path::new("/watch/movies");
         let wp2 = Path::new("/watch/series");
 
-        db.log_watcher_event(&make_watcher_event(wp1, "movie.mkv", WatcherAction::Renamed))
-            .unwrap();
-        db.log_watcher_event(&make_watcher_event(wp2, "series.mkv", WatcherAction::Queued))
-            .unwrap();
+        db.log_watcher_event(&make_watcher_event(
+            wp1,
+            "movie.mkv",
+            WatcherAction::Renamed,
+        ))
+        .unwrap();
+        db.log_watcher_event(&make_watcher_event(
+            wp2,
+            "series.mkv",
+            WatcherAction::Queued,
+        ))
+        .unwrap();
 
         let events_wp1 = db.list_watcher_events(Some(wp1), None).unwrap();
         assert_eq!(events_wp1.len(), 1);
@@ -1085,11 +1164,16 @@ mod tests {
         db.add_to_review_queue(&make_review_entry(wp1, "/src/movie.mkv", "/dst/movie.mkv"))
             .unwrap();
         let id2 = db
-            .add_to_review_queue(&make_review_entry(wp2, "/src/series.mkv", "/dst/series.mkv"))
+            .add_to_review_queue(&make_review_entry(
+                wp2,
+                "/src/series.mkv",
+                "/dst/series.mkv",
+            ))
             .unwrap();
 
         // Approve second entry
-        db.update_review_status(id2, ReviewStatus::Approved).unwrap();
+        db.update_review_status(id2, ReviewStatus::Approved)
+            .unwrap();
 
         // Filter by watch_path
         let movies = db.list_review_queue(Some(wp1), None).unwrap();
@@ -1097,19 +1181,27 @@ mod tests {
         assert_eq!(movies[0].source_path, PathBuf::from("/src/movie.mkv"));
 
         // Filter by status
-        let pending = db.list_review_queue(None, Some(ReviewStatus::Pending)).unwrap();
+        let pending = db
+            .list_review_queue(None, Some(ReviewStatus::Pending))
+            .unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].source_path, PathBuf::from("/src/movie.mkv"));
 
-        let approved = db.list_review_queue(None, Some(ReviewStatus::Approved)).unwrap();
+        let approved = db
+            .list_review_queue(None, Some(ReviewStatus::Approved))
+            .unwrap();
         assert_eq!(approved.len(), 1);
         assert_eq!(approved[0].source_path, PathBuf::from("/src/series.mkv"));
 
         // Filter by both watch_path and status
-        let wp1_pending = db.list_review_queue(Some(wp1), Some(ReviewStatus::Pending)).unwrap();
+        let wp1_pending = db
+            .list_review_queue(Some(wp1), Some(ReviewStatus::Pending))
+            .unwrap();
         assert_eq!(wp1_pending.len(), 1);
 
-        let wp2_pending = db.list_review_queue(Some(wp2), Some(ReviewStatus::Pending)).unwrap();
+        let wp2_pending = db
+            .list_review_queue(Some(wp2), Some(ReviewStatus::Pending))
+            .unwrap();
         assert_eq!(wp2_pending.len(), 0);
     }
 

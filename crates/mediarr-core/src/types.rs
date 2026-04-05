@@ -203,9 +203,10 @@ impl Default for DiscoveryToggles {
 // ---------------------------------------------------------------------------
 
 /// How to handle conflicting target paths.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ConflictStrategy {
     /// Skip conflicting files, leave unprocessed (D-12 default).
+    #[default]
     Skip,
     /// Overwrite existing file at target.
     Overwrite,
@@ -213,25 +214,14 @@ pub enum ConflictStrategy {
     NumericSuffix,
 }
 
-impl Default for ConflictStrategy {
-    fn default() -> Self {
-        Self::Skip
-    }
-}
-
 /// Whether to move or copy files during rename.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RenameOperation {
     /// Move files (D-11 default). EXDEV falls back to copy+verify+remove.
+    #[default]
     Move,
     /// Copy files, leaving source in place.
     Copy,
-}
-
-impl Default for RenameOperation {
-    fn default() -> Self {
-        Self::Move
-    }
 }
 
 /// Result of a single rename operation.
@@ -248,9 +238,10 @@ pub struct RenameResult {
 }
 
 /// What to do with non-preferred subtitle languages.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NonPreferredAction {
     /// Leave non-preferred subtitles in place (default).
+    #[default]
     Ignore,
     /// Move non-preferred subtitles to a backup path.
     Backup,
@@ -258,12 +249,6 @@ pub enum NonPreferredAction {
     KeepAll,
     /// Flag non-preferred subtitles for user review.
     Review,
-}
-
-impl Default for NonPreferredAction {
-    fn default() -> Self {
-        Self::Ignore
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +353,12 @@ impl ScanFilter {
         }
         if let Some(ref search) = self.title_search {
             let search_lower = search.to_lowercase();
-            if !result.media_info.title.to_lowercase().contains(&search_lower) {
+            if !result
+                .media_info
+                .title
+                .to_lowercase()
+                .contains(&search_lower)
+            {
                 return false;
             }
         }

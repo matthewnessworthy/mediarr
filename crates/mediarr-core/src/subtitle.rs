@@ -123,8 +123,12 @@ impl SubtitleDiscovery {
             .and_then(|e| e.to_str())
             .unwrap_or("srt");
 
-        let proposed_path =
-            generate_proposed_path(video_proposed_stem, &language, subtitle_type.as_ref(), extension);
+        let proposed_path = generate_proposed_path(
+            video_proposed_stem,
+            &language,
+            subtitle_type.as_ref(),
+            extension,
+        );
 
         // Determine companion path for VobSub pairs
         let companion_path = if raw.discovery_method == DiscoveryMethod::VobSub {
@@ -433,7 +437,10 @@ fn detect_language(filename: &str, parent_folder: Option<&str>) -> String {
 /// Returns the ISO 639-1 code if available, otherwise 639-3.
 fn detect_language_from_string(s: &str) -> Option<String> {
     // Split on non-alphabetic characters to get segments
-    let segments: Vec<&str> = s.split(|c: char| !c.is_alphabetic()).filter(|s| !s.is_empty()).collect();
+    let segments: Vec<&str> = s
+        .split(|c: char| !c.is_alphabetic())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     for segment in &segments {
         let lower = segment.to_lowercase();
@@ -578,7 +585,10 @@ mod tests {
             .iter()
             .filter(|s| s.discovery_method == DiscoveryMethod::Sidecar)
             .collect();
-        assert!(!sidecar.is_empty(), "should find sidecar subtitle without lang");
+        assert!(
+            !sidecar.is_empty(),
+            "should find sidecar subtitle without lang"
+        );
         assert_eq!(sidecar[0].language, "und");
     }
 
@@ -600,7 +610,10 @@ mod tests {
             .iter()
             .filter(|s| s.discovery_method == DiscoveryMethod::SubsSubfolder)
             .collect();
-        assert!(!subfolder.is_empty(), "should find subtitle in Subs/ folder");
+        assert!(
+            !subfolder.is_empty(),
+            "should find subtitle in Subs/ folder"
+        );
     }
 
     #[test]
@@ -643,7 +656,10 @@ mod tests {
             .iter()
             .filter(|s| s.discovery_method == DiscoveryMethod::NestedLanguage)
             .collect();
-        assert!(!nested.is_empty(), "should find subtitle in English/ folder");
+        assert!(
+            !nested.is_empty(),
+            "should find subtitle in English/ folder"
+        );
         assert_eq!(nested[0].language, "en");
     }
 
@@ -824,12 +840,7 @@ mod tests {
 
     #[test]
     fn path_with_type() {
-        let path = generate_proposed_path(
-            "Movie",
-            "en",
-            Some(&SubtitleType::Forced),
-            "srt",
-        );
+        let path = generate_proposed_path("Movie", "en", Some(&SubtitleType::Forced), "srt");
         assert_eq!(path, PathBuf::from("Movie.en.forced.srt"));
     }
 

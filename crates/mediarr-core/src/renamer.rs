@@ -339,10 +339,7 @@ impl Renamer {
 /// `/dest/Movie (2).mkv`, etc. up to 99. Returns the first non-existing path.
 fn resolve_numeric_suffix(dest: &Path) -> PathBuf {
     let parent = dest.parent().unwrap_or_else(|| Path::new(""));
-    let stem = dest
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file");
+    let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
     let ext = dest.extension().and_then(|e| e.to_str());
 
     for i in 1..=99 {
@@ -381,11 +378,7 @@ mod tests {
 
         let dest = dir.path().join("output").join("Movie.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -410,11 +403,7 @@ mod tests {
         let dest = dir.path().join("existing.mkv");
         std::fs::write(&dest, b"existing").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -439,11 +428,7 @@ mod tests {
 
         let shared_dest = dir.path().join("output.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![
@@ -474,11 +459,7 @@ mod tests {
         let dest = dir.path().join("existing.mkv");
         std::fs::write(&dest, b"existing").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::NumericSuffix,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::NumericSuffix, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -506,11 +487,7 @@ mod tests {
         std::fs::write(&src, b"video data").unwrap();
         let dest = dir.path().join("renamed-movie.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -534,11 +511,7 @@ mod tests {
         std::fs::write(&src, b"content").unwrap();
         let dest = dir.path().join("nested").join("deep").join("Movie.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -560,11 +533,7 @@ mod tests {
         std::fs::write(&src, b"data").unwrap();
         let dest = dir.path().join("dest.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -588,11 +557,7 @@ mod tests {
         std::fs::write(&src, b"video data").unwrap();
         let dest = dir.path().join("Copy.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Copy,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Copy, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -616,11 +581,7 @@ mod tests {
         std::fs::write(&src, b"video data for size check").unwrap();
         let dest = dir.path().join("Copied.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Copy,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Copy, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -649,11 +610,7 @@ mod tests {
         let dest = dir.path().join("existing.mkv");
         std::fs::write(&dest, b"original content").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -680,11 +637,7 @@ mod tests {
         let dest = dir.path().join("existing.mkv");
         std::fs::write(&dest, b"old content").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Overwrite,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Overwrite, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -707,11 +660,7 @@ mod tests {
         let dest = dir.path().join("target.mkv");
         std::fs::write(&dest, b"existing data").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::NumericSuffix,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::NumericSuffix, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -743,11 +692,7 @@ mod tests {
         let suffix1 = dir.path().join("Movie (1).mkv");
         std::fs::write(&suffix1, b"first copy").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::NumericSuffix,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::NumericSuffix, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {
@@ -777,11 +722,7 @@ mod tests {
         let src3 = dir.path().join("file3.mkv");
         std::fs::write(&src3, b"data3").unwrap();
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![
@@ -818,11 +759,7 @@ mod tests {
         std::fs::write(&src, content).unwrap();
         let dest = dir.path().join("renamed-movie.mkv");
 
-        let renamer = Renamer::new(
-            RenameOperation::Move,
-            ConflictStrategy::Skip,
-            true,
-        );
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
 
         let plan = RenamePlan {
             entries: vec![RenamePlanEntry {

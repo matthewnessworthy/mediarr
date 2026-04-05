@@ -177,10 +177,7 @@ fn infer_type_from_fields(
 }
 
 /// Map hunch's confidence to mediarr's, downgrading if media type was inferred.
-fn map_confidence(
-    hunch_confidence: hunch::Confidence,
-    type_was_inferred: bool,
-) -> ParseConfidence {
+fn map_confidence(hunch_confidence: hunch::Confidence, type_was_inferred: bool) -> ParseConfidence {
     let base = match hunch_confidence {
         hunch::Confidence::High => ParseConfidence::High,
         hunch::Confidence::Medium => ParseConfidence::Medium,
@@ -199,11 +196,7 @@ fn map_confidence(
 fn extract_extension(filename: &str) -> String {
     // Strip any path components first
     let basename = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
-    basename
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_lowercase()
+    basename.rsplit('.').next().unwrap_or("").to_lowercase()
 }
 
 #[cfg(test)]
@@ -289,7 +282,10 @@ mod tests {
     fn safe_conversion_valid() {
         assert_eq!(safe_i32_to_u16(Some(5), "test", "test.mkv"), Some(5));
         assert_eq!(safe_i32_to_u16(Some(0), "test", "test.mkv"), Some(0));
-        assert_eq!(safe_i32_to_u16(Some(65535), "test", "test.mkv"), Some(65535));
+        assert_eq!(
+            safe_i32_to_u16(Some(65535), "test", "test.mkv"),
+            Some(65535)
+        );
     }
 
     #[test]

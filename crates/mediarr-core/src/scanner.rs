@@ -110,7 +110,11 @@ impl Scanner {
             // Collect sibling filenames for context-aware parsing
             let sibling_names: Vec<String> = video_files
                 .iter()
-                .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(|s| s.to_string()))
+                .filter_map(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string())
+                })
                 .collect();
             let sibling_refs: Vec<&str> = sibling_names.iter().map(|s| s.as_str()).collect();
 
@@ -254,18 +258,16 @@ impl Scanner {
             .unwrap_or_default();
 
         if !VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-            return Err(MediError::ParseFailed(format!(
-                "not a video file: .{ext}"
-            )));
+            return Err(MediError::ParseFailed(format!("not a video file: .{ext}")));
         }
 
         // Extract filename
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| MediError::NonUtf8Path {
-                path: path.to_path_buf(),
-            })?;
+        let filename =
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| MediError::NonUtf8Path {
+                    path: path.to_path_buf(),
+                })?;
 
         debug!(filename, "scanning single file");
 
@@ -317,8 +319,14 @@ impl Scanner {
     /// Map parse confidence to scan status and optional ambiguity reason.
     fn confidence_to_status(confidence: &ParseConfidence) -> (ScanStatus, Option<String>) {
         match confidence {
-            ParseConfidence::Low => (ScanStatus::Ambiguous, Some("low confidence parse".to_string())),
-            ParseConfidence::Medium => (ScanStatus::Ambiguous, Some("medium confidence parse".to_string())),
+            ParseConfidence::Low => (
+                ScanStatus::Ambiguous,
+                Some("low confidence parse".to_string()),
+            ),
+            ParseConfidence::Medium => (
+                ScanStatus::Ambiguous,
+                Some("medium confidence parse".to_string()),
+            ),
             ParseConfidence::High => (ScanStatus::Ok, None),
         }
     }
@@ -326,7 +334,10 @@ impl Scanner {
     /// Filter scan results by the given criteria.
     ///
     /// Returns references to results that match all active filter fields.
-    pub fn filter_results<'a>(results: &'a [ScanResult], filter: &ScanFilter) -> Vec<&'a ScanResult> {
+    pub fn filter_results<'a>(
+        results: &'a [ScanResult],
+        filter: &ScanFilter,
+    ) -> Vec<&'a ScanResult> {
         results.iter().filter(|r| filter.matches(r)).collect()
     }
 
@@ -448,7 +459,9 @@ mod tests {
         let output = TempDir::new().unwrap();
 
         fs::write(
-            source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
+            source
+                .path()
+                .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
             b"video",
         )
         .unwrap();
@@ -463,7 +476,10 @@ mod tests {
             "title should contain Inception, got: {}",
             r.media_info.title
         );
-        assert!(!r.proposed_path.as_os_str().is_empty(), "proposed_path should be set");
+        assert!(
+            !r.proposed_path.as_os_str().is_empty(),
+            "proposed_path should be set"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -521,7 +537,9 @@ mod tests {
         let output = TempDir::new().unwrap();
 
         fs::write(
-            source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
+            source
+                .path()
+                .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
             b"video",
         )
         .unwrap();
@@ -591,7 +609,9 @@ mod tests {
 
         // High-confidence file (well-formed series name)
         fs::write(
-            source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv"),
+            source
+                .path()
+                .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv"),
             b"series",
         )
         .unwrap();
@@ -625,12 +645,16 @@ mod tests {
         let output = TempDir::new().unwrap();
 
         fs::write(
-            source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv"),
+            source
+                .path()
+                .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv"),
             b"series",
         )
         .unwrap();
         fs::write(
-            source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
+            source
+                .path()
+                .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
             b"movie",
         )
         .unwrap();
@@ -638,17 +662,23 @@ mod tests {
         let scanner = Scanner::new(config_with_output(output.path()));
         let results = scanner.scan_folder(source.path()).unwrap();
 
-        let movies = Scanner::filter_results(&results, &ScanFilter {
-            media_type: Some(MediaType::Movie),
-            ..ScanFilter::default()
-        });
+        let movies = Scanner::filter_results(
+            &results,
+            &ScanFilter {
+                media_type: Some(MediaType::Movie),
+                ..ScanFilter::default()
+            },
+        );
         assert_eq!(movies.len(), 1);
         assert_eq!(movies[0].media_info.media_type, MediaType::Movie);
 
-        let series = Scanner::filter_results(&results, &ScanFilter {
-            media_type: Some(MediaType::Series),
-            ..ScanFilter::default()
-        });
+        let series = Scanner::filter_results(
+            &results,
+            &ScanFilter {
+                media_type: Some(MediaType::Series),
+                ..ScanFilter::default()
+            },
+        );
         assert_eq!(series.len(), 1);
         assert_eq!(series[0].media_info.media_type, MediaType::Series);
     }
@@ -659,7 +689,9 @@ mod tests {
         let output = TempDir::new().unwrap();
 
         fs::write(
-            source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
+            source
+                .path()
+                .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
             b"video",
         )
         .unwrap();
@@ -669,10 +701,13 @@ mod tests {
         let scanner = Scanner::new(config_with_output(output.path()));
         let results = scanner.scan_folder(source.path()).unwrap();
 
-        let ok_only = Scanner::filter_results(&results, &ScanFilter {
-            status: Some(ScanStatus::Ok),
-            ..ScanFilter::default()
-        });
+        let ok_only = Scanner::filter_results(
+            &results,
+            &ScanFilter {
+                status: Some(ScanStatus::Ok),
+                ..ScanFilter::default()
+            },
+        );
         assert!(
             ok_only.iter().all(|r| r.status == ScanStatus::Ok),
             "filter should only return Ok results"
@@ -685,23 +720,24 @@ mod tests {
         let output = TempDir::new().unwrap();
 
         fs::write(
-            source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
+            source
+                .path()
+                .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
             b"video1",
         )
         .unwrap();
-        fs::write(
-            source.path().join("The.Office.S02E03.720p.mkv"),
-            b"video2",
-        )
-        .unwrap();
+        fs::write(source.path().join("The.Office.S02E03.720p.mkv"), b"video2").unwrap();
 
         let scanner = Scanner::new(config_with_output(output.path()));
         let results = scanner.scan_folder(source.path()).unwrap();
 
-        let filtered = Scanner::filter_results(&results, &ScanFilter {
-            title_search: Some("inception".to_string()),
-            ..ScanFilter::default()
-        });
+        let filtered = Scanner::filter_results(
+            &results,
+            &ScanFilter {
+                title_search: Some("inception".to_string()),
+                ..ScanFilter::default()
+            },
+        );
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].media_info.title, "Inception");
     }
@@ -716,16 +752,8 @@ mod tests {
         let output = TempDir::new().unwrap();
 
         // Multiple episodes in same directory should use context-aware parsing
-        fs::write(
-            source.path().join("Show.S01E01.720p.mkv"),
-            b"ep1",
-        )
-        .unwrap();
-        fs::write(
-            source.path().join("Show.S01E02.720p.mkv"),
-            b"ep2",
-        )
-        .unwrap();
+        fs::write(source.path().join("Show.S01E01.720p.mkv"), b"ep1").unwrap();
+        fs::write(source.path().join("Show.S01E02.720p.mkv"), b"ep2").unwrap();
 
         let scanner = Scanner::new(config_with_output(output.path()));
         let results = scanner.scan_folder(source.path()).unwrap();
@@ -748,7 +776,9 @@ mod tests {
         let video_name = "The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv";
         fs::write(source.path().join(video_name), b"video").unwrap();
         fs::write(
-            source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt"),
+            source
+                .path()
+                .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt"),
             b"subtitle",
         )
         .unwrap();
@@ -803,7 +833,9 @@ mod tests {
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();
 
-        let video = source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        let video = source
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
         let scanner = Scanner::new(config_with_output(output.path()));
@@ -850,7 +882,9 @@ mod tests {
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();
 
-        let video = source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        let video = source
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
         let scanner = Scanner::new(config_with_output(output.path()));
@@ -875,7 +909,9 @@ mod tests {
         let video = source.path().join(video_name);
         fs::write(&video, b"video").unwrap();
         fs::write(
-            source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt"),
+            source
+                .path()
+                .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt"),
             b"subtitle",
         )
         .unwrap();

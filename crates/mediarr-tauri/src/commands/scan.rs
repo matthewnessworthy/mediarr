@@ -11,10 +11,7 @@ use crate::state::ManagedState;
 
 /// Scan a folder for media files and return all results at once.
 #[tauri::command]
-pub fn scan_folder(
-    state: State<'_, ManagedState>,
-    path: String,
-) -> CommandResult<Vec<ScanResult>> {
+pub fn scan_folder(state: State<'_, ManagedState>, path: String) -> CommandResult<Vec<ScanResult>> {
     let state = state.lock().map_err(|_| CommandError::StateLock)?;
     let scanner = Scanner::new(state.config.clone());
     let results = scanner.scan_folder(Path::new(&path))?;
@@ -32,7 +29,7 @@ pub enum ScanEvent {
         total_estimate: usize,
     },
     /// A single scan result ready for display.
-    Result { scan_result: ScanResult },
+    Result { scan_result: Box<ScanResult> },
     /// Scan is complete.
     Complete { total: usize },
     /// An error occurred during scanning.
@@ -53,7 +50,7 @@ pub fn scan_folder_streaming(
     for (i, result) in results.into_iter().enumerate() {
         on_event
             .send(ScanEvent::Result {
-                scan_result: result,
+                scan_result: Box::new(result),
             })
             .ok();
         on_event

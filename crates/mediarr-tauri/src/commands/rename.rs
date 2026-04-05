@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use tauri::State;
 
-use mediarr_core::{HistoryDb, RenameRecord, RenamePlan, RenamePlanEntry, Renamer, RenameResult};
+use mediarr_core::{HistoryDb, RenamePlan, RenamePlanEntry, RenameRecord, RenameResult, Renamer};
 
 use crate::error::{CommandError, CommandResult};
 use crate::state::ManagedState;
@@ -54,7 +54,11 @@ pub fn execute_renames(
     // Build source_path -> MediaInfo lookup before consuming entries
     let media_info_map: HashMap<String, mediarr_core::MediaInfo> = entries
         .iter()
-        .filter_map(|e| e.media_info.as_ref().map(|mi| (e.source_path.clone(), mi.clone())))
+        .filter_map(|e| {
+            e.media_info
+                .as_ref()
+                .map(|mi| (e.source_path.clone(), mi.clone()))
+        })
         .collect();
 
     let plan = RenamePlan {

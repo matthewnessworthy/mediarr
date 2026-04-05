@@ -205,12 +205,7 @@ impl OutputFormatter {
                     "FAIL".to_string()
                 };
                 let err = r.error.as_deref().unwrap_or("unknown error");
-                println!(
-                    "  {} {} ({})",
-                    icon,
-                    r.source_path.display(),
-                    err
-                );
+                println!("  {} {} ({})", icon, r.source_path.display(), err);
             }
         }
     }

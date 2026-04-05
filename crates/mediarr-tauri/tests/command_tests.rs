@@ -13,7 +13,7 @@ use tempfile::TempDir;
 use mediarr_core::{
     Config, HistoryDb, MediaInfo, MediaType, ParseConfidence, Scanner, TemplateEngine,
 };
-use mediarr_core::{RenamePlan, RenamePlanEntry, Renamer, RenameRecord};
+use mediarr_core::{RenamePlan, RenamePlanEntry, RenameRecord, Renamer};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,7 +108,10 @@ fn scan_folder_empty_dir_returns_empty() {
     let scanner = Scanner::new(config);
     let results = scanner.scan_folder(source_dir.path()).unwrap();
 
-    assert!(results.is_empty(), "Empty directory should produce no results");
+    assert!(
+        results.is_empty(),
+        "Empty directory should produce no results"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +141,10 @@ fn dry_run_renames_validates_without_touching_fs() {
 
     assert_eq!(results.len(), 1);
     assert!(results[0].success, "Dry run should succeed");
-    assert!(source_file.exists(), "Source file should still exist after dry run");
+    assert!(
+        source_file.exists(),
+        "Source file should still exist after dry run"
+    );
     assert!(
         !dest_file.exists(),
         "Dest file should NOT exist after dry run"

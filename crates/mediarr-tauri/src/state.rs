@@ -13,6 +13,7 @@ pub struct WatcherHandle {
     /// Send `true` to shut down the watcher event loop.
     pub shutdown_tx: tokio::sync::watch::Sender<bool>,
     /// Thread handle (watcher runs on a dedicated thread with its own tokio runtime).
+    #[allow(dead_code)]
     pub thread_handle: JoinHandle<()>,
 }
 

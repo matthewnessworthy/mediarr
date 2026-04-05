@@ -59,7 +59,11 @@ fn approve_all(
             db.update_review_status(id, ReviewStatus::Rejected)?;
             eprintln!(
                 "Rejected (stale): {}",
-                entry.source_path.file_name().unwrap_or_default().to_string_lossy()
+                entry
+                    .source_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
             );
             rejected_stale += 1;
             continue;
@@ -69,7 +73,11 @@ fn approve_all(
         if let Err(e) = execute_review_rename(entry, &renamer, db) {
             eprintln!(
                 "Failed: {} - {e}",
-                entry.source_path.file_name().unwrap_or_default().to_string_lossy()
+                entry
+                    .source_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
             );
             continue;
         }
@@ -77,7 +85,11 @@ fn approve_all(
         db.update_review_status(id, ReviewStatus::Approved)?;
         println!(
             "Approved: {} -> {}",
-            entry.source_path.file_name().unwrap_or_default().to_string_lossy(),
+            entry
+                .source_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
             entry.proposed_path.display()
         );
         approved += 1;
@@ -88,10 +100,7 @@ fn approve_all(
 }
 
 /// Reject all pending entries.
-fn reject_all(
-    entries: &[mediarr_core::ReviewQueueEntry],
-    db: &HistoryDb,
-) -> anyhow::Result<()> {
+fn reject_all(entries: &[mediarr_core::ReviewQueueEntry], db: &HistoryDb) -> anyhow::Result<()> {
     for entry in entries {
         let id = entry.id.unwrap_or(0);
         db.update_review_status(id, ReviewStatus::Rejected)?;
@@ -168,7 +177,11 @@ fn interactive_review(
         if stale_flags[i] {
             eprintln!(
                 "Skipped (stale): {}",
-                entry.source_path.file_name().unwrap_or_default().to_string_lossy()
+                entry
+                    .source_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
             );
             db.update_review_status(id, ReviewStatus::Rejected)?;
             continue;
@@ -177,7 +190,11 @@ fn interactive_review(
         if let Err(e) = execute_review_rename(entry, &renamer, db) {
             eprintln!(
                 "Failed: {} - {e}",
-                entry.source_path.file_name().unwrap_or_default().to_string_lossy()
+                entry
+                    .source_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
             );
             continue;
         }
@@ -185,7 +202,11 @@ fn interactive_review(
         db.update_review_status(id, ReviewStatus::Approved)?;
         println!(
             "Approved: {} -> {}",
-            entry.source_path.file_name().unwrap_or_default().to_string_lossy(),
+            entry
+                .source_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
             entry.proposed_path.display()
         );
         approved += 1;
@@ -224,23 +245,21 @@ fn execute_review_rename(
     let batch_id = HistoryDb::generate_batch_id();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
-    let media_info: mediarr_core::MediaInfo =
-        serde_json::from_str(&entry.media_info_json).unwrap_or_else(|_| {
-            mediarr_core::MediaInfo {
-                title: String::new(),
-                media_type: mediarr_core::MediaType::Movie,
-                year: None,
-                season: None,
-                episodes: vec![],
-                resolution: None,
-                video_codec: None,
-                audio_codec: None,
-                source: None,
-                release_group: None,
-                container: String::new(),
-                language: None,
-                confidence: mediarr_core::ParseConfidence::High,
-            }
+    let media_info: mediarr_core::MediaInfo = serde_json::from_str(&entry.media_info_json)
+        .unwrap_or_else(|_| mediarr_core::MediaInfo {
+            title: String::new(),
+            media_type: mediarr_core::MediaType::Movie,
+            year: None,
+            season: None,
+            episodes: vec![],
+            resolution: None,
+            video_codec: None,
+            audio_codec: None,
+            source: None,
+            release_group: None,
+            container: String::new(),
+            language: None,
+            confidence: mediarr_core::ParseConfidence::High,
         });
 
     let file_size = std::fs::metadata(&entry.proposed_path)

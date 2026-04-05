@@ -64,13 +64,20 @@ fn scan_json_output_is_valid_json() {
     assert!(output.status.success(), "scan --json should succeed");
 
     let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout should be valid JSON");
     assert!(parsed.is_array(), "JSON output should be an array");
 
     let arr = parsed.as_array().unwrap();
     assert!(!arr.is_empty(), "should have at least one scan result");
-    assert!(arr[0].get("source_path").is_some(), "entry should have source_path");
-    assert!(arr[0].get("media_info").is_some(), "entry should have media_info");
+    assert!(
+        arr[0].get("source_path").is_some(),
+        "entry should have source_path"
+    );
+    assert!(
+        arr[0].get("media_info").is_some(),
+        "entry should have media_info"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -169,5 +176,7 @@ fn scan_tree_shows_detail() {
         .arg(dir.path())
         .assert()
         .success()
-        .stdout(predicates::str::contains("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv"));
+        .stdout(predicates::str::contains(
+            "The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv",
+        ));
 }

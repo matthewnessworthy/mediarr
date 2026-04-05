@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use crate::error::{MediError, Result};
-use crate::types::{ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation, WatcherConfig};
+use crate::types::{
+    ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation, WatcherConfig,
+};
 
 /// Top-level application configuration.
 ///
 /// Contains all settings organised into logical groups: general behaviour,
 /// naming templates, and subtitle handling. Serialises to/from TOML.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     /// General application settings.
     pub general: GeneralConfig,
@@ -72,17 +74,6 @@ pub struct SubtitleConfig {
 // ---------------------------------------------------------------------------
 // Default implementations
 // ---------------------------------------------------------------------------
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            templates: TemplateConfig::default(),
-            subtitles: SubtitleConfig::default(),
-            watchers: Vec::new(),
-        }
-    }
-}
 
 impl Default for GeneralConfig {
     fn default() -> Self {
@@ -371,7 +362,9 @@ mod tests {
         // On any platform where dirs::config_dir() works, the path should
         // end with mediarr/config.toml.
         if let Ok(path) = default_config_path() {
-            assert!(path.ends_with("mediarr/config.toml") || path.ends_with("mediarr\\config.toml"));
+            assert!(
+                path.ends_with("mediarr/config.toml") || path.ends_with("mediarr\\config.toml")
+            );
         }
         // If dirs::config_dir() returns None (unlikely on desktop), the
         // function should return ConfigPathUnavailable -- that's tested

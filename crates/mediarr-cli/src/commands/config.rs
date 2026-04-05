@@ -17,7 +17,7 @@ pub fn execute(args: ConfigArgs) -> anyhow::Result<()> {
         // --get: navigate dotted path and print value
         let value = toml::Value::try_from(&config)?;
         let found = navigate_path(&value, key)?;
-        print_value(&found);
+        print_value(found);
     } else if let Some(ref kv) = args.set {
         // --set key value
         let key = &kv[0];
@@ -91,7 +91,9 @@ fn set_path(root: &mut toml::Value, path: &str, val: &str) -> anyhow::Result<()>
     }
 
     // Set the leaf value
-    let leaf_key = segments.last().ok_or_else(|| anyhow::anyhow!("empty key path"))?;
+    let leaf_key = segments
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("empty key path"))?;
     match current {
         toml::Value::Table(table) => {
             // Preserve the type of the existing value
@@ -114,15 +116,21 @@ fn coerce_value(val: &str, existing: &toml::Value) -> anyhow::Result<toml::Value
     match existing {
         toml::Value::String(_) => Ok(toml::Value::String(val.to_string())),
         toml::Value::Integer(_) => {
-            let n: i64 = val.parse().map_err(|_| anyhow::anyhow!("expected integer, got: {val}"))?;
+            let n: i64 = val
+                .parse()
+                .map_err(|_| anyhow::anyhow!("expected integer, got: {val}"))?;
             Ok(toml::Value::Integer(n))
         }
         toml::Value::Float(_) => {
-            let f: f64 = val.parse().map_err(|_| anyhow::anyhow!("expected float, got: {val}"))?;
+            let f: f64 = val
+                .parse()
+                .map_err(|_| anyhow::anyhow!("expected float, got: {val}"))?;
             Ok(toml::Value::Float(f))
         }
         toml::Value::Boolean(_) => {
-            let b: bool = val.parse().map_err(|_| anyhow::anyhow!("expected boolean, got: {val}"))?;
+            let b: bool = val
+                .parse()
+                .map_err(|_| anyhow::anyhow!("expected boolean, got: {val}"))?;
             Ok(toml::Value::Boolean(b))
         }
         _ => Ok(toml::Value::String(val.to_string())),
@@ -161,7 +169,10 @@ fn validate_field(key: &str, val: &str) -> anyhow::Result<()> {
         "mode" if key.contains("watchers") => {
             let allowed = ["auto", "review"];
             if !allowed.contains(&val.to_lowercase().as_str()) {
-                anyhow::bail!("invalid watcher mode: {val} (allowed: {})", allowed.join(", "));
+                anyhow::bail!(
+                    "invalid watcher mode: {val} (allowed: {})",
+                    allowed.join(", ")
+                );
             }
         }
         _ => {}

@@ -5,7 +5,7 @@
 //! Uses a channel bridge pattern to connect notify's sync callbacks to
 //! tokio's async runtime.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use notify::RecursiveMode;
@@ -43,6 +43,7 @@ pub(crate) fn is_video_file(path: &Path) -> bool {
 /// a channel bridge pattern. Processes debounced filesystem events by
 /// either auto-renaming or queuing for review.
 pub struct WatcherManager {
+    #[allow(dead_code)]
     config: Config,
     scanner: Scanner,
     renamer: Renamer,
@@ -96,7 +97,10 @@ impl WatcherManager {
         let mut debouncer = new_debouncer(
             Duration::from_secs(debounce_seconds),
             None,
-            move |result: std::result::Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
+            move |result: std::result::Result<
+                Vec<notify_debouncer_full::DebouncedEvent>,
+                Vec<notify::Error>,
+            >| {
                 match result {
                     Ok(events) => {
                         if let Err(e) = sync_tx.send(events) {
@@ -195,12 +199,7 @@ impl WatcherManager {
     /// In review mode: scan, queue for review, log event.
     /// Errors are logged as watcher events rather than propagated (the
     /// watcher loop must not crash on individual file failures).
-    fn process_single_file(
-        &self,
-        path: &Path,
-        watch_path: &Path,
-        mode: WatcherMode,
-    ) -> Result<()> {
+    fn process_single_file(&self, path: &Path, watch_path: &Path, mode: WatcherMode) -> Result<()> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let filename = path
             .file_name()
@@ -225,7 +224,8 @@ impl WatcherManager {
                     batch_id: None,
                 };
                 self.history.log_watcher_event(&event)?;
-                self.history.prune_watcher_events(watch_path, self.max_activity_events)?;
+                self.history
+                    .prune_watcher_events(watch_path, self.max_activity_events)?;
                 return Ok(());
             }
         };
@@ -266,9 +266,9 @@ impl WatcherManager {
                             let file_mtime = std::fs::metadata(&r.dest_path)
                                 .and_then(|m| m.modified())
                                 .ok()
-                                .and_then(|t| {
+                                .map(|t| {
                                     let dt: chrono::DateTime<chrono::Utc> = t.into();
-                                    Some(dt.to_rfc3339())
+                                    dt.to_rfc3339()
                                 })
                                 .unwrap_or_default();
 
@@ -321,7 +321,8 @@ impl WatcherManager {
                 }
 
                 // Prune old events
-                self.history.prune_watcher_events(watch_path, self.max_activity_events)?;
+                self.history
+                    .prune_watcher_events(watch_path, self.max_activity_events)?;
             }
 
             WatcherMode::Review => {
@@ -358,7 +359,8 @@ impl WatcherManager {
                 self.history.log_watcher_event(&event)?;
 
                 // Prune old events
-                self.history.prune_watcher_events(watch_path, self.max_activity_events)?;
+                self.history
+                    .prune_watcher_events(watch_path, self.max_activity_events)?;
             }
         }
 
@@ -373,6 +375,7 @@ mod tests {
     use crate::history::HistoryDb;
     use crate::types::{ReviewStatus, WatcherAction};
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     /// Helper: create a Config with output_dir set.
@@ -414,12 +417,18 @@ mod tests {
         let db_dir = TempDir::new().unwrap();
         let db_path = db_dir.path().join("test.db");
 
-        let video = source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        let video = source
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
         let watcher = setup_watcher(output.path(), &db_path);
         let result = watcher.process_single_file(&video, source.path(), WatcherMode::Auto);
-        assert!(result.is_ok(), "process_single_file should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "process_single_file should succeed: {:?}",
+            result
+        );
 
         // Verify the file was moved (source gone, something exists in output)
         assert!(!video.exists(), "source file should have been moved");
@@ -444,15 +453,24 @@ mod tests {
         let db_dir = TempDir::new().unwrap();
         let db_path = db_dir.path().join("test.db");
 
-        let video = source.path().join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        let video = source
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
         let watcher = setup_watcher(output.path(), &db_path);
         let result = watcher.process_single_file(&video, source.path(), WatcherMode::Review);
-        assert!(result.is_ok(), "process_single_file should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "process_single_file should succeed: {:?}",
+            result
+        );
 
         // Source file should still exist (not renamed)
-        assert!(video.exists(), "source file should NOT be moved in review mode");
+        assert!(
+            video.exists(),
+            "source file should NOT be moved in review mode"
+        );
 
         // Verify entry added to review queue
         let queue = watcher
@@ -505,7 +523,9 @@ mod tests {
         let db_dir = TempDir::new().unwrap();
         let db_path = db_dir.path().join("test.db");
 
-        let video = source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
+        let video = source
+            .path()
+            .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
         fs::write(&video, b"series data").unwrap();
 
         let watcher = setup_watcher(output.path(), &db_path);
@@ -529,7 +549,9 @@ mod tests {
         let db_dir = TempDir::new().unwrap();
         let db_path = db_dir.path().join("test.db");
 
-        let video = source.path().join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
+        let video = source
+            .path()
+            .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
         fs::write(&video, b"series data").unwrap();
 
         let watcher = setup_watcher(output.path(), &db_path);
@@ -590,13 +612,12 @@ mod tests {
 
     #[test]
     fn is_video_file_accepts_video_extensions() {
-        let video_exts = ["mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "flv", "webm"];
+        let video_exts = [
+            "mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "flv", "webm",
+        ];
         for ext in &video_exts {
             let path = PathBuf::from(format!("file.{ext}"));
-            assert!(
-                is_video_file(&path),
-                "{ext} should be recognised as video"
-            );
+            assert!(is_video_file(&path), "{ext} should be recognised as video");
         }
     }
 

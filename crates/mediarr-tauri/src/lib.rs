@@ -17,14 +17,11 @@ pub fn run() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let config_path = config::default_config_path()
-        .expect("could not determine config path");
-    let data_path = config::default_data_path()
-        .expect("could not determine data path");
+    let config_path = config::default_config_path().expect("could not determine config path");
+    let data_path = config::default_data_path().expect("could not determine data path");
 
     let config = Config::load(&config_path).unwrap_or_default();
-    let db = HistoryDb::open(&data_path)
-        .expect("failed to open history database");
+    let db = HistoryDb::open(&data_path).expect("failed to open history database");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

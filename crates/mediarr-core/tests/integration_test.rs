@@ -186,11 +186,7 @@ fn test_scan_rename_undo_roundtrip() {
 
     // 12. Verify batch removed from history
     let batches_after = db.list_batches(None).unwrap();
-    assert_eq!(
-        batches_after.len(),
-        0,
-        "Batch should be removed after undo"
-    );
+    assert_eq!(batches_after.len(), 0, "Batch should be removed after undo");
 }
 
 #[test]
@@ -266,9 +262,7 @@ fn test_scan_filter_by_media_type() {
     )
     .unwrap();
     fs::write(
-        source
-            .path()
-            .join("Breaking.Bad.S01E01.720p.mkv"),
+        source.path().join("Breaking.Bad.S01E01.720p.mkv"),
         b"series2",
     )
     .unwrap();
@@ -302,5 +296,9 @@ fn test_scan_filter_by_media_type() {
 
     // No filter: returns all
     let all = Scanner::filter_results(&results, &ScanFilter::default());
-    assert_eq!(all.len(), results.len(), "No filter should return all results");
+    assert_eq!(
+        all.len(),
+        results.len(),
+        "No filter should return all results"
+    );
 }

@@ -102,10 +102,7 @@ impl TemplateEngine {
         let result = collapse_dots(&result);
 
         // Split on '/' into path components, sanitize each
-        let components: Vec<String> = result
-            .split('/')
-            .map(|c| sanitize_component(c))
-            .collect();
+        let components: Vec<String> = result.split('/').map(sanitize_component).collect();
 
         // Build PathBuf from components
         let mut path = PathBuf::new();
@@ -245,8 +242,7 @@ fn resolve_episode(episodes: &[u16], modifier: Option<&str>) -> Result<String> {
 /// The modifier must start with `0` followed by a width digit.
 fn apply_modifier(value: &str, modifier: &str) -> Result<String> {
     // Zero-padding modifier: "02", "03", etc.
-    if modifier.starts_with('0') {
-        let width_str = &modifier[1..];
+    if let Some(width_str) = modifier.strip_prefix('0') {
         let width: usize = width_str.parse().map_err(|_| MediError::InvalidModifier {
             modifier: modifier.to_string(),
         })?;
@@ -285,11 +281,7 @@ fn collapse_dots(input: &str) -> String {
     // Strip leading/trailing dots from each path component
     result
         .split('/')
-        .map(|component| {
-            component
-                .trim_start_matches('.')
-                .trim_end_matches('.')
-        })
+        .map(|component| component.trim_start_matches('.').trim_end_matches('.'))
         .collect::<Vec<_>>()
         .join("/")
 }
@@ -306,7 +298,10 @@ fn sanitize_component(component: &str) -> String {
     };
     let sanitized = sanitize_filename::sanitize_with_options(component, opts);
     // Trim trailing dots/spaces (Windows restriction)
-    sanitized.trim_end_matches('.').trim_end_matches(' ').to_string()
+    sanitized
+        .trim_end_matches('.')
+        .trim_end_matches(' ')
+        .to_string()
 }
 
 #[cfg(test)]
@@ -440,10 +435,7 @@ mod tests {
         let result = engine
             .render("{title} - S{season:02}E{episode:02}.{ext}", &info)
             .unwrap();
-        assert_eq!(
-            result,
-            PathBuf::from("The Office - S02E03.mkv")
-        );
+        assert_eq!(result, PathBuf::from("The Office - S02E03.mkv"));
     }
 
     #[test]
@@ -458,9 +450,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            PathBuf::from(
-                "Inception (2010) [1080p] [x264] [DTS] [BluRay] - FGT.mkv"
-            )
+            PathBuf::from("Inception (2010) [1080p] [x264] [DTS] [BluRay] - FGT.mkv")
         );
     }
 
@@ -510,9 +500,7 @@ mod tests {
         let mut info = series_info();
         info.resolution = None;
         // Use resolution as a stand-in for testing empty collapse
-        let result = engine
-            .render("{title}.{resolution}.{ext}", &info)
-            .unwrap();
+        let result = engine.render("{title}.{resolution}.{ext}", &info).unwrap();
         assert_eq!(result, PathBuf::from("The Office.mkv"));
     }
 
@@ -559,9 +547,7 @@ mod tests {
         let mut info = movie_info();
         info.episodes = vec![];
         // episode with no episodes -> empty string
-        let result = engine
-            .render("{title}.{episode}.{ext}", &info)
-            .unwrap();
+        let result = engine.render("{title}.{episode}.{ext}", &info).unwrap();
         // should collapse dots: "Inception.mkv"
         assert_eq!(result, PathBuf::from("Inception.mkv"));
     }
@@ -622,8 +608,7 @@ mod tests {
         let result = engine
             .render("{title} ({year})/{title} ({year}).{ext}", &info)
             .unwrap();
-        let expected =
-            PathBuf::from("Inception (2010)").join("Inception (2010).mkv");
+        let expected = PathBuf::from("Inception (2010)").join("Inception (2010).mkv");
         assert_eq!(result, expected);
     }
 
@@ -663,9 +648,7 @@ mod tests {
         let mut info = movie_info();
         info.title = "Title.".to_string();
         info.year = None;
-        let result = engine
-            .render("{title}/{title}.{ext}", &info)
-            .unwrap();
+        let result = engine.render("{title}/{title}.{ext}", &info).unwrap();
         // Trailing dots should be stripped from path components
         let rendered = result.to_string_lossy();
         assert!(!rendered.starts_with("Title./") && !rendered.starts_with("Title.\\"));
@@ -726,8 +709,7 @@ mod tests {
     #[test]
     fn validate_series_template_missing_season() {
         let engine = super::TemplateEngine::new();
-        let warnings =
-            engine.validate("{title} - E{episode:02}.{ext}", &MediaType::Series);
+        let warnings = engine.validate("{title} - E{episode:02}.{ext}", &MediaType::Series);
         assert!(
             warnings.iter().any(|w| w.variable == "season"),
             "expected warning about missing season"
@@ -737,8 +719,7 @@ mod tests {
     #[test]
     fn validate_series_template_missing_episode() {
         let engine = super::TemplateEngine::new();
-        let warnings =
-            engine.validate("{title} - S{season:02}.{ext}", &MediaType::Series);
+        let warnings = engine.validate("{title} - S{season:02}.{ext}", &MediaType::Series);
         assert!(
             warnings.iter().any(|w| w.variable == "episode"),
             "expected warning about missing episode"
@@ -752,7 +733,11 @@ mod tests {
             "{title} - S{season:02}E{episode:02}.{ext}",
             &MediaType::Series,
         );
-        assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {:?}",
+            warnings
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -772,9 +757,12 @@ mod tests {
     #[test]
     fn validate_movie_complete_no_warnings() {
         let engine = super::TemplateEngine::new();
-        let warnings =
-            engine.validate("{title} ({year}).{ext}", &MediaType::Movie);
-        assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+        let warnings = engine.validate("{title} ({year}).{ext}", &MediaType::Movie);
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {:?}",
+            warnings
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -816,8 +804,7 @@ mod tests {
     #[test]
     fn validate_does_not_error_on_unknown_variables() {
         let engine = super::TemplateEngine::new();
-        let warnings =
-            engine.validate("{title}.{unknown_thing}.{ext}", &MediaType::Movie);
+        let warnings = engine.validate("{title}.{unknown_thing}.{ext}", &MediaType::Movie);
         // validate returns warnings, not errors. Unknown vars are render's job.
         // Should only warn about missing year for Movie type.
         assert!(
@@ -840,7 +827,10 @@ mod tests {
         assert!(!warnings.is_empty(), "expected warnings for missing year");
         // Rendering the same template should succeed
         let result = engine.render("{title}.{ext}", &info);
-        assert!(result.is_ok(), "render should succeed despite validation warnings");
+        assert!(
+            result.is_ok(),
+            "render should succeed despite validation warnings"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -872,8 +862,7 @@ mod tests {
         let result = engine
             .render("{title} ({year})/{title} ({year}).{ext}", &info)
             .unwrap();
-        let expected =
-            PathBuf::from("Inception (2010)").join("Inception (2010).mkv");
+        let expected = PathBuf::from("Inception (2010)").join("Inception (2010).mkv");
         assert_eq!(result, expected);
     }
 
@@ -930,9 +919,7 @@ mod tests {
         let engine = super::TemplateEngine::new();
         let info = series_info();
         // No modifier on episode
-        let result = engine
-            .render("E{episode}.{ext}", &info)
-            .unwrap();
+        let result = engine.render("E{episode}.{ext}", &info).unwrap();
         assert_eq!(result, PathBuf::from("E3.mkv"));
     }
 }

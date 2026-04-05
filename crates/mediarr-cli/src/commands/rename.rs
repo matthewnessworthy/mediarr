@@ -6,7 +6,7 @@
 use std::io::{self, BufRead, Write};
 
 use mediarr_core::{
-    Config, HistoryDb, RenamePlan, RenamePlanEntry, Renamer, RenameRecord, ScanStatus, Scanner,
+    Config, HistoryDb, RenamePlan, RenamePlanEntry, RenameRecord, Renamer, ScanStatus, Scanner,
 };
 
 use crate::output::OutputFormatter;
@@ -135,10 +135,7 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
                     .unwrap_or(0);
                 let file_mtime = std::fs::metadata(&r.dest_path)
                     .and_then(|m| m.modified())
-                    .map(|t| {
-                        chrono::DateTime::<chrono::Utc>::from(t)
-                            .to_rfc3339()
-                    })
+                    .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
                     .unwrap_or_default();
 
                 RenameRecord {
