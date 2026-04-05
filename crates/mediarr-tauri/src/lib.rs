@@ -23,9 +23,7 @@ pub fn run() {
     let config_path = match config::default_config_path() {
         Ok(p) => p,
         Err(e) => {
-            show_startup_error(&format!(
-                "Could not determine configuration path.\n\n{e}"
-            ));
+            show_startup_error(&format!("Could not determine configuration path.\n\n{e}"));
             std::process::exit(1);
         }
     };
@@ -33,9 +31,7 @@ pub fn run() {
     let data_path = match config::default_data_path() {
         Ok(p) => p,
         Err(e) => {
-            show_startup_error(&format!(
-                "Could not determine data path.\n\n{e}"
-            ));
+            show_startup_error(&format!("Could not determine data path.\n\n{e}"));
             std::process::exit(1);
         }
     };
@@ -82,9 +78,7 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
-            show_startup_error(&format!(
-                "Tauri application failed to start.\n\n{e}"
-            ));
+            show_startup_error(&format!("Tauri application failed to start.\n\n{e}"));
             std::process::exit(1);
         });
 }
