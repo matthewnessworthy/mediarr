@@ -62,9 +62,10 @@
 				: chosen.media_type === 'Anime'
 					? config.templates.anime
 					: config.templates.series;
-		const newPath = await invoke<string>('preview_template', {
+		const newPath = await invoke<string>('preview_proposed_path', {
 			template,
 			mediaInfo: chosen,
+			sourcePath: result.source_path,
 		});
 
 		// Update the result in scanState
@@ -94,7 +95,7 @@
 	<button
 		type="button"
 		aria-expanded={expanded}
-		class="flex w-full flex-col gap-0.5 px-4 py-1.5 text-left hover:bg-accent/20 transition-colors focus-ring"
+		class="flex w-full min-w-0 flex-col gap-0.5 px-4 py-1.5 text-left hover:bg-accent/20 transition-colors focus-ring"
 		style="transition-duration: var(--duration-fast);"
 		onclick={handleRowClick}
 	>
@@ -110,7 +111,7 @@
 			<!-- Expand indicator -->
 			<ChevronRight
 				class={cn(
-					'size-3.5 shrink-0 text-muted-foreground/50 transition-transform',
+					'size-3.5 shrink-0 text-muted-foreground/60 transition-transform',
 					expanded && 'rotate-90'
 				)}
 				style="transition-duration: var(--duration-fast);"
@@ -130,26 +131,26 @@
 				{formattedTitle()}
 			</span>
 
-			<!-- Metadata pills -->
-			<div class="shrink-0">
+			<!-- Metadata pills (hidden at narrow widths via overflow) -->
+			<div class="hidden sm:block min-w-0 overflow-hidden">
 				<MetadataPills mediaInfo={result.media_info} />
 			</div>
 
-			<!-- Subtitle count -->
+			<!-- Subtitle count (hidden at narrow widths) -->
 			{#if result.subtitles.length > 0}
-				<span class="shrink-0 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70 bg-muted/40">
+				<span class="hidden sm:inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/40">
 					{result.subtitles.length} sub{result.subtitles.length !== 1 ? 's' : ''}
 				</span>
 			{/if}
 		</div>
 
 		<!-- Line 2: source path -> proposed path -->
-		<div class="flex items-center gap-2 pl-[4.25rem] min-w-0">
-			<span class="truncate-start font-mono text-[11px] text-muted-foreground/60 min-w-0 flex-1" title={result.source_path}>
+		<div class="flex items-center gap-2 pl-7 sm:pl-[4.25rem] min-w-0">
+			<span class="truncate-start font-mono text-[11px] text-muted-foreground min-w-0 flex-1" title={result.source_path}>
 				{basename(result.source_path)}
 			</span>
-			<span class="text-muted-foreground/30 shrink-0">&rarr;</span>
-			<span class="truncate font-mono text-[11px] text-foreground/60 min-w-0 flex-1" title={result.proposed_path}>
+			<span class="text-muted-foreground/50 shrink-0">&rarr;</span>
+			<span class="truncate font-mono text-[11px] text-foreground/80 min-w-0 flex-1" title={result.proposed_path}>
 				{result.proposed_path}
 			</span>
 		</div>
@@ -164,7 +165,7 @@
 				</div>
 			{:else if expanded}
 				<div class="px-4 pb-3 ml-8 pl-4">
-					<span class="text-xs text-muted-foreground/50">No subtitles found</span>
+					<span class="text-xs text-muted-foreground/60">No subtitles found</span>
 				</div>
 			{/if}
 
@@ -174,14 +175,15 @@
 					currentInfo={result.media_info}
 					ambiguityReason={result.ambiguity_reason}
 					alternatives={result.alternatives}
+					groupId={result.source_path}
 					onResolve={handleResolve}
 				/>
 			{/if}
 
 			<!-- Template type indicator -->
 			{#if expanded}
-				<div class="px-4 pb-2 pl-[4.25rem]">
-					<span class="text-[11px] text-muted-foreground/40">
+				<div class="px-4 pb-2 pl-7 sm:pl-[4.25rem]">
+					<span class="text-[11px] text-muted-foreground/60">
 						Using: {result.media_info.media_type} template
 					</span>
 				</div>

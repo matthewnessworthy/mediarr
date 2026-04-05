@@ -38,17 +38,17 @@
 					</span>
 				{/if}
 
-				<span class="text-[10px] text-muted-foreground/60 shrink-0">
+				<span class="text-[10px] text-muted-foreground shrink-0">
 					{sub.discovery_method}
 				</span>
 
-				<span class="truncate font-mono text-[11px] text-muted-foreground/70" title={sub.source_path}>
+				<span class="truncate font-mono text-[11px] text-muted-foreground" title={sub.source_path}>
 					{basename(sub.source_path)}
 				</span>
 
-				<span class="text-muted-foreground/40 shrink-0">&rarr;</span>
+				<span class="text-muted-foreground/50 shrink-0">&rarr;</span>
 
-				<span class="truncate font-mono text-[11px] text-foreground/60" title={sub.proposed_path}>
+				<span class="truncate font-mono text-[11px] text-foreground/80" title={sub.proposed_path}>
 					{basename(sub.proposed_path)}
 				</span>
 			</div>

@@ -16,7 +16,7 @@
 	<div class="flex items-center gap-1">
 		{#each pills as pill}
 			<span
-				class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/60 bg-muted/30"
+				class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/40"
 			>
 				{pill}
 			</span>

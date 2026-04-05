@@ -191,6 +191,167 @@ describe('ScanState', () => {
 		expect(scanState.scanningFolderIndex).toBe(-1);
 	});
 
+	describe('conflict group selection', () => {
+		it('selectAll excludes Conflict-status files', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/ok.mkv', status: 'Ok', proposed_path: '/out/ok.mkv' }),
+				mockScanResult({
+					source_path: '/dup-a.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+				mockScanResult({
+					source_path: '/dup-b.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+			];
+			flushSync();
+			scanState.selectAll();
+			flushSync();
+			expect(scanState.selectedPaths.has('/ok.mkv')).toBe(true);
+			expect(scanState.selectedPaths.has('/dup-a.mkv')).toBe(false);
+			expect(scanState.selectedPaths.has('/dup-b.mkv')).toBe(false);
+			expect(scanState.selectedCount).toBe(1);
+		});
+
+		it('toggleSelect enforces mutual exclusion within conflict group', () => {
+			scanState.results = [
+				mockScanResult({
+					source_path: '/dup-a.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+				mockScanResult({
+					source_path: '/dup-b.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+				mockScanResult({
+					source_path: '/dup-c.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+			];
+			flushSync();
+
+			// Select first conflict file
+			scanState.toggleSelect('/dup-a.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/dup-a.mkv')).toBe(true);
+
+			// Select second — first should be deselected
+			scanState.toggleSelect('/dup-b.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/dup-b.mkv')).toBe(true);
+			expect(scanState.selectedPaths.has('/dup-a.mkv')).toBe(false);
+
+			// Select third — second should be deselected
+			scanState.toggleSelect('/dup-c.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/dup-c.mkv')).toBe(true);
+			expect(scanState.selectedPaths.has('/dup-b.mkv')).toBe(false);
+			expect(scanState.selectedPaths.has('/dup-a.mkv')).toBe(false);
+		});
+
+		it('toggleSelect deselects a conflict file normally', () => {
+			scanState.results = [
+				mockScanResult({
+					source_path: '/dup-a.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+				mockScanResult({
+					source_path: '/dup-b.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+			];
+			flushSync();
+
+			scanState.toggleSelect('/dup-a.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/dup-a.mkv')).toBe(true);
+
+			// Deselect it
+			scanState.toggleSelect('/dup-a.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/dup-a.mkv')).toBe(false);
+			expect(scanState.selectedPaths.has('/dup-b.mkv')).toBe(false);
+		});
+
+		it('toggleSelect does not affect non-conflict files', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/ok-a.mkv', status: 'Ok', proposed_path: '/out/a.mkv' }),
+				mockScanResult({ source_path: '/ok-b.mkv', status: 'Ok', proposed_path: '/out/b.mkv' }),
+			];
+			flushSync();
+
+			scanState.toggleSelect('/ok-a.mkv');
+			scanState.toggleSelect('/ok-b.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/ok-a.mkv')).toBe(true);
+			expect(scanState.selectedPaths.has('/ok-b.mkv')).toBe(true);
+		});
+
+		it('independent conflict groups do not interfere with each other', () => {
+			scanState.results = [
+				mockScanResult({
+					source_path: '/group1-a.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/dest1.mkv',
+				}),
+				mockScanResult({
+					source_path: '/group1-b.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/dest1.mkv',
+				}),
+				mockScanResult({
+					source_path: '/group2-a.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/dest2.mkv',
+				}),
+				mockScanResult({
+					source_path: '/group2-b.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/dest2.mkv',
+				}),
+			];
+			flushSync();
+
+			// Select one from each group
+			scanState.toggleSelect('/group1-a.mkv');
+			scanState.toggleSelect('/group2-b.mkv');
+			flushSync();
+			expect(scanState.selectedPaths.has('/group1-a.mkv')).toBe(true);
+			expect(scanState.selectedPaths.has('/group1-b.mkv')).toBe(false);
+			expect(scanState.selectedPaths.has('/group2-a.mkv')).toBe(false);
+			expect(scanState.selectedPaths.has('/group2-b.mkv')).toBe(true);
+			expect(scanState.selectedCount).toBe(2);
+		});
+
+		it('conflictGroups getter builds correct map', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/ok.mkv', status: 'Ok', proposed_path: '/out/ok.mkv' }),
+				mockScanResult({
+					source_path: '/dup-a.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+				mockScanResult({
+					source_path: '/dup-b.mkv',
+					status: 'Conflict',
+					proposed_path: '/out/same.mkv',
+				}),
+			];
+			flushSync();
+
+			const groups = scanState.conflictGroups;
+			expect(groups.size).toBe(1);
+			expect(groups.get('/out/same.mkv')).toEqual(['/dup-a.mkv', '/dup-b.mkv']);
+		});
+	});
+
 	describe('multi-folder management', () => {
 		it('addFolder appends path when not present', () => {
 			scanState.addFolder('/movies');

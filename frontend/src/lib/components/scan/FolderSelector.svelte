@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { open } from '@tauri-apps/plugin-dialog';
+	import { stat } from '@tauri-apps/plugin-fs';
+	import { dirname } from '@tauri-apps/api/path';
 	import { listen } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
 	import { scanState } from '$lib/state/scan.svelte.js';
@@ -21,13 +23,34 @@
 	let destroyed = false;
 	let recentOpen = $state(false);
 
+	/**
+	 * Resolve a dropped path to a directory. If the path is a file,
+	 * return its parent directory so scan_folder receives a valid dir.
+	 */
+	async function resolveToDirectory(path: string): Promise<string> {
+		const info = await stat(path);
+		if (info.isDirectory) return path;
+		return await dirname(path);
+	}
+
 	onMount(async () => {
-		const fn = await listen<{ paths: string[] }>('tauri://drag-drop', (event) => {
+		const fn = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
 			dragOver = false;
 			const paths = event.payload.paths;
 			if (paths && paths.length > 0) {
-				scanState.addFolder(paths[0]);
-				onSelect(paths[0]);
+				// Resolve all dropped paths to directories (files -> parent dir)
+				const resolved = await Promise.all(paths.map(resolveToDirectory));
+				// Deduplicate
+				const unique = [...new Set(resolved)];
+				// Add all to scan state and track in recent paths
+				for (const folder of unique) {
+					scanState.addFolder(folder);
+					if (!scanState.recentPaths.includes(folder)) {
+						scanState.recentPaths = [folder, ...scanState.recentPaths].slice(0, 5);
+					}
+				}
+				// Trigger scan — startScan will scan all folderPaths
+				onSelect(unique[0]);
 			}
 		});
 		// If component was destroyed while listen() was resolving, clean up immediately
@@ -113,7 +136,7 @@
 			aria-label="Drop zone for media folders"
 		>
 			<FolderOpen class="size-8 mx-auto mb-4 text-muted-foreground/30" />
-			<p class="text-sm text-muted-foreground mb-4">Drop a folder here to scan</p>
+			<p class="text-sm text-muted-foreground mb-4">Drop files or folders here to scan</p>
 			<Button variant="outline" size="sm" onclick={openDialog} class="focus-ring">
 				<FolderOpen class="size-3.5" data-icon="inline-start" />
 				Browse

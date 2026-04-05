@@ -37,18 +37,71 @@ class ScanState {
 		return { all, series, movies, anime, ambiguous };
 	}
 
+	/**
+	 * Build a map of proposed_path -> source_paths[] for all Conflict-status results.
+	 * Used to enforce mutual exclusion: only one file per conflict group can be selected.
+	 */
+	get conflictGroups(): Map<string, string[]> {
+		const groups = new Map<string, string[]>();
+		for (const r of this.results) {
+			if (r.status !== 'Conflict') continue;
+			const key = r.proposed_path;
+			const existing = groups.get(key);
+			if (existing) {
+				existing.push(r.source_path);
+			} else {
+				groups.set(key, [r.source_path]);
+			}
+		}
+		return groups;
+	}
+
+	/**
+	 * Find the conflict group (sibling source_paths sharing the same proposed_path)
+	 * for a given source_path, or null if not in a conflict group.
+	 */
+	private getConflictSiblings(path: string): string[] | null {
+		for (const siblings of this.conflictGroups.values()) {
+			if (siblings.includes(path)) {
+				return siblings;
+			}
+		}
+		return null;
+	}
+
 	toggleSelect(path: string) {
 		const next = new Set(this.selectedPaths);
 		if (next.has(path)) {
 			next.delete(path);
 		} else {
+			// Enforce mutual exclusion: deselect siblings in the same conflict group
+			const siblings = this.getConflictSiblings(path);
+			if (siblings) {
+				for (const sibling of siblings) {
+					if (sibling !== path) {
+						next.delete(sibling);
+					}
+				}
+			}
 			next.add(path);
 		}
 		this.selectedPaths = next;
 	}
 
 	selectAll() {
-		this.selectedPaths = new Set(this.filteredResults.map((r) => r.source_path));
+		// Collect all source_paths that are in any conflict group
+		const conflictPaths = new Set<string>();
+		for (const siblings of this.conflictGroups.values()) {
+			for (const p of siblings) {
+				conflictPaths.add(p);
+			}
+		}
+		// Select all filtered results EXCEPT those in conflict groups
+		this.selectedPaths = new Set(
+			this.filteredResults
+				.filter((r) => !conflictPaths.has(r.source_path))
+				.map((r) => r.source_path)
+		);
 	}
 
 	deselectAll() {

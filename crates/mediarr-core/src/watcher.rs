@@ -100,7 +100,37 @@ impl WatcherManager {
         watch_path: &Path,
         mode: WatcherMode,
         debounce_seconds: u64,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> Result<()> {
+        self.run_inner(watch_path, mode, debounce_seconds, shutdown, None)
+            .await
+    }
+
+    /// Like [`run`], but sends a signal on `init_tx` once the debouncer is
+    /// watching and the event loop is about to start. If initialization fails,
+    /// the error is sent on the channel instead. This lets the caller (e.g.
+    /// a Tauri command) detect and report early failures rather than having
+    /// the thread die silently.
+    pub async fn run_with_init_signal(
+        &self,
+        watch_path: &Path,
+        mode: WatcherMode,
+        debounce_seconds: u64,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+        init_tx: std::sync::mpsc::SyncSender<std::result::Result<(), String>>,
+    ) -> Result<()> {
+        self.run_inner(watch_path, mode, debounce_seconds, shutdown, Some(init_tx))
+            .await
+    }
+
+    /// Internal implementation shared by [`run`] and [`run_with_init_signal`].
+    async fn run_inner(
+        &self,
+        watch_path: &Path,
+        mode: WatcherMode,
+        debounce_seconds: u64,
         mut shutdown: tokio::sync::watch::Receiver<bool>,
+        init_tx: Option<std::sync::mpsc::SyncSender<std::result::Result<(), String>>>,
     ) -> Result<()> {
         info!(path = %watch_path.display(), ?mode, debounce_seconds, "starting watcher");
 
@@ -133,12 +163,24 @@ impl WatcherManager {
                 }
             },
         )
-        .map_err(|e| MediError::Watcher(format!("failed to create debouncer: {e}")))?;
+        .map_err(|e| {
+            let msg = format!("failed to create debouncer: {e}");
+            if let Some(ref tx) = init_tx {
+                let _ = tx.send(Err(msg.clone()));
+            }
+            MediError::Watcher(msg)
+        })?;
 
         // Start watching the path
         debouncer
             .watch(watch_path, RecursiveMode::Recursive)
-            .map_err(|e| MediError::Watcher(format!("failed to watch path: {e}")))?;
+            .map_err(|e| {
+                let msg = format!("failed to watch path: {e}");
+                if let Some(ref tx) = init_tx {
+                    let _ = tx.send(Err(msg.clone()));
+                }
+                MediError::Watcher(msg)
+            })?;
 
         // Bridge thread: forward from sync channel to async channel.
         // Named for easier debugging in thread dumps and profilers.
@@ -152,7 +194,20 @@ impl WatcherManager {
                     }
                 }
             })
-            .map_err(|e| MediError::Watcher(format!("failed to spawn bridge thread: {e}")))?;
+            .map_err(|e| {
+                let msg = format!("failed to spawn bridge thread: {e}");
+                if let Some(ref tx) = init_tx {
+                    let _ = tx.send(Err(msg.clone()));
+                }
+                MediError::Watcher(msg)
+            })?;
+
+        // Signal successful initialization — watcher is watching and event
+        // loop is about to start.
+        if let Some(tx) = init_tx {
+            let _ = tx.send(Ok(()));
+        }
+        info!(path = %watch_path.display(), "watcher initialized and running");
 
         // Async event loop
         let watch_path_owned = watch_path.to_path_buf();
@@ -177,28 +232,49 @@ impl WatcherManager {
 
     /// Process a batch of debounced filesystem events.
     ///
-    /// Filters for create/rename-to events on video files, then delegates
-    /// to [`process_single_file`] for each.
+    /// Filters for events that indicate a new file has appeared in the watched
+    /// directory, then delegates to [`process_single_file`] for each.
+    ///
+    /// Accepted event kinds:
+    /// - `Create(_)` — new file written (e.g. `cp`, download)
+    /// - `Modify(Name(RenameMode::To))` — rename destination (Linux/inotify)
+    /// - `Modify(Name(RenameMode::Both))` — matched rename pair (debouncer
+    ///   stitched from+to); destination is `paths.last()`
+    /// - `Modify(Name(RenameMode::Any))` — unmatched rename on macOS FSEvents;
+    ///   the debouncer stores these only when the path exists (i.e. "move in")
     fn process_debounced_events(
         &self,
         events: &[notify_debouncer_full::DebouncedEvent],
         watch_path: &Path,
         mode: WatcherMode,
     ) {
-        for event in events {
-            // Only process file creation and rename-to events
-            let dominated = matches!(
-                event.kind,
-                notify::EventKind::Create(_)
-                    | notify::EventKind::Modify(notify::event::ModifyKind::Name(
-                        notify::event::RenameMode::To
-                    ))
-            );
-            if !dominated {
-                continue;
-            }
+        use notify::event::{ModifyKind, RenameMode};
+        use notify::EventKind;
 
-            for path in &event.paths {
+        for event in events {
+            // Determine which path to process based on event kind.
+            // For rename-both events the destination is the last path;
+            // for all other accepted events the paths slice itself is fine.
+            let target_paths: &[std::path::PathBuf] = match &event.kind {
+                EventKind::Create(_) => &event.paths,
+
+                EventKind::Modify(ModifyKind::Name(
+                    RenameMode::To | RenameMode::Any,
+                )) => &event.paths,
+
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                    // paths = [old, new]; we only care about the destination
+                    if let Some(dest) = event.paths.last() {
+                        std::slice::from_ref(dest)
+                    } else {
+                        continue;
+                    }
+                }
+
+                _ => continue,
+            };
+
+            for path in target_paths {
                 if !is_video_file(path) {
                     debug!(path = %path.display(), "skipping non-video file");
                     continue;
@@ -669,5 +745,227 @@ mod tests {
     #[test]
     fn is_video_file_rejects_no_extension() {
         assert!(!is_video_file(Path::new("noextension")));
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Full watcher run() loop detects new files via filesystem events
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_detects_new_file_via_filesystem_event() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let event_count = Arc::new(AtomicUsize::new(0));
+        let event_count_clone = event_count.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |_event| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        // Spawn dedicated OS thread with its own single-threaded tokio runtime
+        // (mirrors the Tauri command pattern — WatcherManager is !Send due to rusqlite)
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to start up
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Create a video file in the watched directory
+        let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        // Wait for debounce (1 second timeout) + processing time
+        // The debouncer ticks at timeout/4 = 250ms, events emitted after timeout (1s)
+        std::thread::sleep(std::time::Duration::from_secs(4));
+
+        // Shutdown the watcher
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(
+            result.is_ok(),
+            "watcher run should complete without error: {:?}",
+            result
+        );
+
+        // Check that at least one event was processed
+        let count = event_count.load(Ordering::SeqCst);
+        assert!(
+            count > 0,
+            "expected at least 1 watcher event from filesystem, got {count}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Watcher detects files moved (renamed) into the watched directory.
+    // On macOS FSEvents emits RenameMode::Any for moves; this test verifies
+    // the filter correctly catches these events.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_detects_moved_file_via_rename_event() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let watched = TempDir::new().unwrap();
+        let staging = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let event_count = Arc::new(AtomicUsize::new(0));
+        let event_count_clone = event_count.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |_event| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = watched.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-mv".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to start
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Create a video file OUTSIDE the watched directory, then move it in.
+        // This triggers a rename event (RenameMode::Any on macOS) rather than
+        // a Create event.
+        let staged_video = staging
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&staged_video, b"video data").unwrap();
+        let dest_video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::rename(&staged_video, &dest_video).unwrap();
+
+        // Wait for debounce + processing
+        std::thread::sleep(std::time::Duration::from_secs(4));
+
+        // Shutdown the watcher
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(
+            result.is_ok(),
+            "watcher run should complete without error: {:?}",
+            result
+        );
+
+        let count = event_count.load(Ordering::SeqCst);
+        assert!(
+            count > 0,
+            "expected at least 1 watcher event from move/rename, got {count}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Watcher works with default config (no output_dir) — in-place rename.
+    // This mimics the real Tauri app scenario more closely.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_works_with_default_config_no_output_dir() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let source = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        // Use default config — output_dir is None (in-place rename)
+        let config = Config::default();
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let event_count = Arc::new(AtomicUsize::new(0));
+        let event_count_clone = event_count.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |event| {
+            eprintln!("[test] on_event callback: action={:?} filename={}", event.action, event.filename);
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-nooutput".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to start up
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Create a video file in the watched directory
+        let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        // Wait for debounce (1s) + processing time
+        std::thread::sleep(std::time::Duration::from_secs(4));
+
+        // Shutdown the watcher
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(
+            result.is_ok(),
+            "watcher run should complete without error: {:?}",
+            result
+        );
+
+        let count = event_count.load(Ordering::SeqCst);
+        assert!(
+            count > 0,
+            "expected at least 1 watcher event with default config (no output_dir), got {count}"
+        );
     }
 }

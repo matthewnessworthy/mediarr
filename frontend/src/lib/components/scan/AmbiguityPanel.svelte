@@ -1,25 +1,48 @@
 <script lang="ts">
-	import type { MediaInfo } from '$lib/types';
+	import type { MediaInfo, MediaType } from '$lib/types';
 	import { cn } from '$lib/utils.js';
 	import MediaBadge from './MediaBadge.svelte';
 	import { Loader2 } from '@lucide/svelte';
+
+	const ALL_MEDIA_TYPES: MediaType[] = ['Movie', 'Series', 'Anime'];
 
 	const {
 		currentInfo,
 		ambiguityReason,
 		alternatives,
+		groupId,
 		onResolve,
 	}: {
 		currentInfo: MediaInfo;
 		ambiguityReason: string | null;
 		alternatives: MediaInfo[];
+		groupId: string;
 		onResolve: (chosen: MediaInfo) => void;
 	} = $props();
 
 	let selectedIndex = $state<number>(0); // 0 = current, 1+ = alternatives
 	let resolving = $state(false);
 
-	const allOptions = $derived<MediaInfo[]>([currentInfo, ...alternatives]);
+	/**
+	 * Build the full options list: current info first, then backend-provided
+	 * alternatives, then synthetic alternatives for any missing media types.
+	 */
+	const allOptions = $derived(() => {
+		const options: MediaInfo[] = [currentInfo, ...alternatives];
+		const presentTypes = new Set(options.map((o) => o.media_type));
+
+		for (const mediaType of ALL_MEDIA_TYPES) {
+			if (!presentTypes.has(mediaType)) {
+				options.push({
+					...currentInfo,
+					media_type: mediaType,
+					confidence: 'Low',
+				});
+			}
+		}
+
+		return options;
+	});
 
 	function formatOption(info: MediaInfo): string {
 		if (info.media_type === 'Movie') {
@@ -38,7 +61,7 @@
 		if (selectedIndex === 0) return; // No change
 		resolving = true;
 		try {
-			onResolve(allOptions[selectedIndex]);
+			onResolve(allOptions()[selectedIndex]);
 		} finally {
 			resolving = false;
 		}
@@ -53,7 +76,7 @@
 
 	<!-- Radio options -->
 	<div class="flex flex-col gap-1.5">
-		{#each allOptions as option, i}
+		{#each allOptions() as option, i}
 			<label
 				class={cn(
 					'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md cursor-pointer transition-colors duration-100 hover:bg-accent/20',
@@ -62,7 +85,7 @@
 			>
 				<input
 					type="radio"
-					name="ambiguity-resolution"
+					name="ambiguity-{groupId}"
 					value={i}
 					checked={selectedIndex === i}
 					onchange={() => (selectedIndex = i)}

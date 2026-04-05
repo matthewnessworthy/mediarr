@@ -69,6 +69,11 @@ pub fn update_review_status(
 /// Spawns a dedicated OS thread with its own single-threaded tokio runtime
 /// because `WatcherManager` holds a `rusqlite::Connection` which is `!Send`.
 /// The watcher config must already exist in the application config.
+///
+/// Waits for the watcher thread to signal successful initialization before
+/// returning. If the thread fails during setup (DB open, debouncer creation,
+/// path watch), the error is propagated back to the frontend instead of being
+/// silently swallowed.
 #[tauri::command]
 pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path: String) -> CommandResult<()> {
     let mut state = state.lock().map_err(|_| CommandError::StateLock)?;
@@ -107,6 +112,10 @@ pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path
     // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
+    // Init-result channel: the thread sends Ok(()) once the watcher is running,
+    // or Err(message) if initialization fails. This prevents silent thread death.
+    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+
     // Spawn dedicated thread with its own tokio runtime
     let thread_name = format!("watcher-{path}");
     let thread_handle = std::thread::Builder::new()
@@ -116,7 +125,9 @@ pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path
             let db = match mediarr_core::HistoryDb::open(&data_path) {
                 Ok(db) => db,
                 Err(e) => {
-                    error!(path = %watch_path.display(), "failed to open history db for watcher: {e}");
+                    let msg = format!("failed to open history db: {e}");
+                    error!(path = %watch_path.display(), "{msg}");
+                    let _ = init_tx.send(Err(msg));
                     return;
                 }
             };
@@ -131,18 +142,37 @@ pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path
             {
                 Ok(rt) => rt,
                 Err(e) => {
-                    error!(path = %watch_path.display(), "failed to create tokio runtime for watcher: {e}");
+                    let msg = format!("failed to create tokio runtime: {e}");
+                    error!(path = %watch_path.display(), "{msg}");
+                    let _ = init_tx.send(Err(msg));
                     return;
                 }
             };
 
-            if let Err(e) = rt.block_on(watcher.run(&watch_path, mode, debounce, shutdown_rx)) {
+            // Run the watcher; it sends the init signal internally once the
+            // debouncer is watching and the event loop is about to start.
+            if let Err(e) = rt.block_on(watcher.run_with_init_signal(
+                &watch_path,
+                mode,
+                debounce,
+                shutdown_rx,
+                init_tx,
+            )) {
                 error!(path = %watch_path.display(), "watcher exited with error: {e}");
             }
         })
         .map_err(|e| CommandError::Other(format!("failed to spawn watcher thread: {e}")))?;
 
-    info!(path = %path, "watcher started");
+    // Wait for the thread to report initialization status.
+    // This blocks the Tauri command handler briefly but ensures we catch
+    // early failures (DB open, debouncer creation, path watch) instead of
+    // silently swallowing them.
+    init_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| CommandError::Other(format!("watcher init timed out: {e}")))?
+        .map_err(CommandError::Other)?;
+
+    info!(path = %path, "watcher started and confirmed running");
 
     state.active_watchers.insert(
         path,

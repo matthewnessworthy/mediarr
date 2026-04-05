@@ -75,6 +75,7 @@ pub fn run() {
             commands::config::get_config,
             commands::config::update_config,
             commands::config::preview_template,
+            commands::config::preview_proposed_path,
             commands::config::validate_template,
         ])
         .run(tauri::generate_context!())
