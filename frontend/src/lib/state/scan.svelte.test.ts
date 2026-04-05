@@ -169,7 +169,7 @@ describe('ScanState', () => {
 	it('reset clears all state back to defaults', () => {
 		scanState.results = [mockScanResult()];
 		scanState.loading = true;
-		scanState.folderPath = '/test';
+		scanState.folderPaths = ['/test'];
 		scanState.filterType = 'Movie';
 		scanState.filterStatus = 'Ok';
 		scanState.searchQuery = 'test';
@@ -182,11 +182,46 @@ describe('ScanState', () => {
 
 		expect(scanState.results).toHaveLength(0);
 		expect(scanState.loading).toBe(false);
-		expect(scanState.folderPath).toBe('');
+		expect(scanState.folderPaths).toEqual([]);
 		expect(scanState.filterType).toBeNull();
 		expect(scanState.filterStatus).toBeNull();
 		expect(scanState.searchQuery).toBe('');
 		expect(scanState.selectedCount).toBe(0);
 		expect(scanState.scanProgress).toEqual({ scanned: 0, total: 0 });
+		expect(scanState.scanningFolderIndex).toBe(-1);
+	});
+
+	describe('multi-folder management', () => {
+		it('addFolder appends path when not present', () => {
+			scanState.addFolder('/movies');
+			flushSync();
+			expect(scanState.folderPaths).toEqual(['/movies']);
+			scanState.addFolder('/series');
+			flushSync();
+			expect(scanState.folderPaths).toEqual(['/movies', '/series']);
+		});
+
+		it('addFolder does not duplicate existing path', () => {
+			scanState.addFolder('/movies');
+			scanState.addFolder('/movies');
+			flushSync();
+			expect(scanState.folderPaths).toEqual(['/movies']);
+		});
+
+		it('removeFolder removes specific path', () => {
+			scanState.folderPaths = ['/movies', '/series', '/anime'];
+			flushSync();
+			scanState.removeFolder('/series');
+			flushSync();
+			expect(scanState.folderPaths).toEqual(['/movies', '/anime']);
+		});
+
+		it('removeFolder is no-op for non-existent path', () => {
+			scanState.folderPaths = ['/movies'];
+			flushSync();
+			scanState.removeFolder('/nonexistent');
+			flushSync();
+			expect(scanState.folderPaths).toEqual(['/movies']);
+		});
 	});
 });

@@ -26,6 +26,7 @@
 			dragOver = false;
 			const paths = event.payload.paths;
 			if (paths && paths.length > 0) {
+				scanState.addFolder(paths[0]);
 				onSelect(paths[0]);
 			}
 		});
@@ -49,12 +50,14 @@
 			title: 'Select media folder',
 		});
 		if (selected && typeof selected === 'string') {
+			scanState.addFolder(selected);
 			onSelect(selected);
 		}
 	}
 
 	function selectRecent(path: string) {
 		recentOpen = false;
+		scanState.addFolder(path);
 		onSelect(path);
 	}
 </script>
@@ -127,7 +130,7 @@
 							class="w-full text-left px-3 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-md truncate transition-colors focus-ring"
 							style="transition-duration: var(--duration-fast);"
 							title={path}
-							onclick={() => onSelect(path)}
+							onclick={() => { scanState.addFolder(path); onSelect(path); }}
 						>
 							{path}
 						</button>

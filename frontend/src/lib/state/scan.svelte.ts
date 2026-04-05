@@ -3,7 +3,8 @@ import type { ScanResult, MediaType, ScanStatus } from '$lib/types';
 class ScanState {
 	results = $state<ScanResult[]>([]);
 	loading = $state(false);
-	folderPath = $state('');
+	folderPaths = $state<string[]>([]);
+	scanningFolderIndex = $state(-1);
 	filterType = $state<MediaType | null>(null);
 	filterStatus = $state<ScanStatus | null>(null);
 	searchQuery = $state('');
@@ -54,10 +55,25 @@ class ScanState {
 		this.selectedPaths = new Set();
 	}
 
+	addFolder(path: string) {
+		if (!this.folderPaths.includes(path)) {
+			this.folderPaths = [...this.folderPaths, path];
+		}
+	}
+
+	removeFolder(path: string) {
+		this.folderPaths = this.folderPaths.filter(p => p !== path);
+	}
+
+	clearAll() {
+		this.reset();
+	}
+
 	reset() {
 		this.results = [];
 		this.loading = false;
-		this.folderPath = '';
+		this.folderPaths = [];
+		this.scanningFolderIndex = -1;
 		this.filterType = null;
 		this.filterStatus = null;
 		this.searchQuery = '';
