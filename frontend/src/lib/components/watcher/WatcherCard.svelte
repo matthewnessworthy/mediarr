@@ -26,7 +26,7 @@
 		toggling = true;
 		try {
 			const command = checked ? 'start_watcher' : 'stop_watcher';
-			await invoke(command, { watchPath: watcher.path });
+			await invoke(command, { path: watcher.path });
 			active = checked;
 		} catch (e) {
 			console.error('Watcher toggle failed:', e);

@@ -49,6 +49,7 @@ pub struct WatcherManager {
     renamer: Renamer,
     history: HistoryDb,
     max_activity_events: usize,
+    on_event: Option<Box<dyn Fn(&WatcherEvent) + Send>>,
 }
 
 impl WatcherManager {
@@ -62,6 +63,20 @@ impl WatcherManager {
             renamer,
             history,
             max_activity_events: DEFAULT_MAX_EVENTS,
+            on_event: None,
+        }
+    }
+
+    /// Set an optional callback invoked after each watcher event is logged to SQLite.
+    /// The callback runs in the watcher thread context.
+    pub fn set_on_event(&mut self, callback: Box<dyn Fn(&WatcherEvent) + Send>) {
+        self.on_event = Some(callback);
+    }
+
+    /// Notify the on_event callback if one is set.
+    fn notify_event(&self, event: &WatcherEvent) {
+        if let Some(ref cb) = self.on_event {
+            cb(event);
         }
     }
 
@@ -228,6 +243,7 @@ impl WatcherManager {
                     batch_id: None,
                 };
                 self.history.log_watcher_event(&event)?;
+                self.notify_event(&event);
                 self.history
                     .prune_watcher_events(watch_path, self.max_activity_events)?;
                 return Ok(());
@@ -303,6 +319,7 @@ impl WatcherManager {
                         batch_id: Some(batch_id),
                     };
                     self.history.log_watcher_event(&event)?;
+                    self.notify_event(&event);
                 } else {
                     // Some renames failed
                     let errors: Vec<String> = results
@@ -322,6 +339,7 @@ impl WatcherManager {
                         batch_id: None,
                     };
                     self.history.log_watcher_event(&event)?;
+                    self.notify_event(&event);
                 }
 
                 // Prune old events
@@ -361,6 +379,7 @@ impl WatcherManager {
                     batch_id: None,
                 };
                 self.history.log_watcher_event(&event)?;
+                self.notify_event(&event);
 
                 // Prune old events
                 self.history
