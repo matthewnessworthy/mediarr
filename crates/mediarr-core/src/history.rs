@@ -323,12 +323,16 @@ impl HistoryDb {
             }
         }
 
-        // If all moves succeeded, remove batch from database
+        // If all moves succeeded, remove batch from database atomically.
+        // unchecked_transaction works on &Connection (execute_undo takes &self).
+        // If the process crashes mid-commit, the batch stays in history (safe fallback).
         if results.iter().all(|r| r.success) {
-            self.conn.execute(
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute(
                 "DELETE FROM rename_history WHERE batch_id = ?1",
                 params![batch_id],
             )?;
+            tx.commit()?;
             info!(batch_id, "undo complete, batch removed from history");
         }
 

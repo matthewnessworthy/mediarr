@@ -122,15 +122,19 @@ impl WatcherManager {
             .watch(watch_path, RecursiveMode::Recursive)
             .map_err(|e| MediError::Watcher(format!("failed to watch path: {e}")))?;
 
-        // Bridge thread: forward from sync channel to async channel
+        // Bridge thread: forward from sync channel to async channel.
+        // Named for easier debugging in thread dumps and profilers.
         let bridge_async_tx = async_tx.clone();
-        std::thread::spawn(move || {
-            while let Ok(events) = sync_rx.recv() {
-                if bridge_async_tx.send(events).is_err() {
-                    break; // async receiver dropped, stop bridge
+        std::thread::Builder::new()
+            .name("mediarr-watcher-bridge".to_string())
+            .spawn(move || {
+                while let Ok(events) = sync_rx.recv() {
+                    if bridge_async_tx.send(events).is_err() {
+                        break; // async receiver dropped, stop bridge
+                    }
                 }
-            }
-        });
+            })
+            .map_err(|e| MediError::Watcher(format!("failed to spawn bridge thread: {e}")))?;
 
         // Async event loop
         let watch_path_owned = watch_path.to_path_buf();
