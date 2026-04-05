@@ -37,6 +37,9 @@ pub(crate) fn is_video_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Callback type invoked after each watcher event is logged to SQLite.
+type EventCallback = Box<dyn Fn(&WatcherEvent) + Send>;
+
 /// Manages filesystem watching for a single folder.
 ///
 /// Bridges notify's synchronous callbacks to tokio's async runtime using
@@ -49,7 +52,7 @@ pub struct WatcherManager {
     renamer: Renamer,
     history: HistoryDb,
     max_activity_events: usize,
-    on_event: Option<Box<dyn Fn(&WatcherEvent) + Send>>,
+    on_event: Option<EventCallback>,
 }
 
 impl WatcherManager {
@@ -69,7 +72,7 @@ impl WatcherManager {
 
     /// Set an optional callback invoked after each watcher event is logged to SQLite.
     /// The callback runs in the watcher thread context.
-    pub fn set_on_event(&mut self, callback: Box<dyn Fn(&WatcherEvent) + Send>) {
+    pub fn set_on_event(&mut self, callback: EventCallback) {
         self.on_event = Some(callback);
     }
 

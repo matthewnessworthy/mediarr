@@ -71,6 +71,7 @@ pub fn run() {
             commands::watcher::update_review_status,
             commands::watcher::start_watcher,
             commands::watcher::stop_watcher,
+            commands::watcher::approve_review_entry,
             commands::config::get_config,
             commands::config::update_config,
             commands::config::preview_template,

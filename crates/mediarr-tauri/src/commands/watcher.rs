@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use tauri::State;
+use tauri::{Emitter, State};
 use tracing::{error, info};
 
 use mediarr_core::{ReviewQueueEntry, ReviewStatus, WatcherConfig, WatcherEvent, WatcherManager};
@@ -70,7 +70,7 @@ pub fn update_review_status(
 /// because `WatcherManager` holds a `rusqlite::Connection` which is `!Send`.
 /// The watcher config must already exist in the application config.
 #[tauri::command]
-pub fn start_watcher(state: State<'_, ManagedState>, path: String) -> CommandResult<()> {
+pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path: String) -> CommandResult<()> {
     let mut state = state.lock().map_err(|_| CommandError::StateLock)?;
 
     // Find the watcher config for this path
@@ -97,6 +97,13 @@ pub fn start_watcher(state: State<'_, ManagedState>, path: String) -> CommandRes
     let mode = watcher_config.mode;
     let debounce = watcher_config.debounce_seconds;
 
+    // Create event emission callback for real-time frontend updates
+    let app_handle = app.clone();
+    let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
+        Box::new(move |event: &mediarr_core::WatcherEvent| {
+            let _ = app_handle.emit("watcher-event", event);
+        });
+
     // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
@@ -114,7 +121,8 @@ pub fn start_watcher(state: State<'_, ManagedState>, path: String) -> CommandRes
                 }
             };
 
-            let watcher = WatcherManager::new(config, db);
+            let mut watcher = WatcherManager::new(config, db);
+            watcher.set_on_event(on_event_callback);
 
             // Create a single-threaded tokio runtime for this thread
             let rt = match tokio::runtime::Builder::new_current_thread()
@@ -165,6 +173,132 @@ pub fn stop_watcher(state: State<'_, ManagedState>, path: String) -> CommandResu
     let _ = handle.shutdown_tx.send(true);
 
     info!(path = %path, "watcher stop signal sent");
+
+    Ok(())
+}
+
+/// Approve a review queue entry: execute the rename, record history, update status.
+///
+/// Mirrors the CLI's execute_review_rename flow. Rejects stale entries where
+/// the source file no longer exists.
+#[tauri::command]
+pub fn approve_review_entry(
+    state: State<'_, ManagedState>,
+    id: i64,
+) -> CommandResult<()> {
+    let state = state.lock().map_err(|_| CommandError::StateLock)?;
+
+    // 1. Find the pending review entry
+    let entries = state.db.list_review_queue(None, None)?;
+    let entry = entries
+        .iter()
+        .find(|e| e.id == Some(id))
+        .ok_or_else(|| CommandError::Other(format!("review entry not found: {id}")))?;
+
+    // 2. Stale check: reject if source file no longer exists
+    if !entry.source_path.exists() {
+        state.db.update_review_status(id, ReviewStatus::Rejected)?;
+        return Err(CommandError::Other(
+            "source file no longer exists -- entry rejected as stale".into(),
+        ));
+    }
+
+    // 3. Build rename plan (video + subtitles)
+    let mut plan_entries = vec![mediarr_core::RenamePlanEntry {
+        source_path: entry.source_path.clone(),
+        dest_path: entry.proposed_path.clone(),
+    }];
+
+    // Parse subtitle entries from JSON and add to plan
+    if let Ok(subtitles) =
+        serde_json::from_str::<Vec<mediarr_core::SubtitleMatch>>(&entry.subtitles_json)
+    {
+        for sub in &subtitles {
+            plan_entries.push(mediarr_core::RenamePlanEntry {
+                source_path: sub.source_path.clone(),
+                dest_path: sub.proposed_path.clone(),
+            });
+        }
+    }
+
+    let plan = mediarr_core::RenamePlan {
+        entries: plan_entries,
+    };
+
+    // 4. Execute rename
+    let renamer = mediarr_core::Renamer::from_config(&state.config.general);
+    let results = renamer.execute(&plan);
+    let all_success = results.iter().all(|r| r.success);
+
+    if !all_success {
+        let errors: Vec<String> = results
+            .iter()
+            .filter(|r| !r.success)
+            .filter_map(|r| r.error.clone())
+            .collect();
+        return Err(CommandError::Other(format!(
+            "rename failed: {}",
+            errors.join("; ")
+        )));
+    }
+
+    // 5. Record to history
+    let batch_id = mediarr_core::HistoryDb::generate_batch_id();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    let media_info: mediarr_core::MediaInfo =
+        serde_json::from_str(&entry.media_info_json).unwrap_or_else(|_| {
+            mediarr_core::MediaInfo {
+                title: String::new(),
+                media_type: mediarr_core::MediaType::Movie,
+                year: None,
+                season: None,
+                episodes: vec![],
+                resolution: None,
+                video_codec: None,
+                audio_codec: None,
+                source: None,
+                release_group: None,
+                container: String::new(),
+                language: None,
+                confidence: mediarr_core::ParseConfidence::High,
+            }
+        });
+
+    let records: Vec<mediarr_core::RenameRecord> = results
+        .iter()
+        .filter(|r| r.success)
+        .map(|r| {
+            let file_size = std::fs::metadata(&r.dest_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let file_mtime = std::fs::metadata(&r.dest_path)
+                .and_then(|m| m.modified())
+                .ok()
+                .map(|t| {
+                    let dt: chrono::DateTime<chrono::Utc> = t.into();
+                    dt.to_rfc3339()
+                })
+                .unwrap_or_default();
+
+            mediarr_core::RenameRecord {
+                batch_id: batch_id.clone(),
+                timestamp: timestamp.clone(),
+                source_path: r.source_path.clone(),
+                dest_path: r.dest_path.clone(),
+                media_info: media_info.clone(),
+                file_size,
+                file_mtime,
+            }
+        })
+        .collect();
+
+    state.db.record_batch(&records)?;
+
+    // 6. Update review status
+    state
+        .db
+        .update_review_status(id, ReviewStatus::Approved)?;
 
     Ok(())
 }
