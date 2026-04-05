@@ -502,4 +502,58 @@ mod tests {
         assert_eq!(restored.status, crate::types::ReviewStatus::Pending);
         assert_eq!(restored.media_info_json, r#"{"title":"Test"}"#);
     }
+
+    // -- Partial TOML tests (missing sections are parse errors) --
+
+    #[test]
+    fn load_partial_toml_missing_sections_returns_error() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("partial.toml");
+        // Only write the [general] section, omitting templates and subtitles
+        std::fs::write(
+            &path,
+            r#"
+[general]
+operation = "Copy"
+conflict_strategy = "Overwrite"
+create_directories = false
+"#,
+        )
+        .expect("write");
+
+        let result = Config::load(&path);
+        assert!(result.is_err(), "partial TOML missing required sections should error");
+        match result.unwrap_err() {
+            MediError::ConfigParse(_) => {} // expected
+            other => panic!("expected ConfigParse, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_empty_toml_returns_parse_error() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("empty.toml");
+        std::fs::write(&path, "").expect("write");
+
+        let result = Config::load(&path);
+        assert!(result.is_err(), "empty TOML should fail to parse (missing required fields)");
+        match result.unwrap_err() {
+            MediError::ConfigParse(_) => {} // expected
+            other => panic!("expected ConfigParse, got: {other:?}"),
+        }
+    }
+
+    // -- I/O error propagation --
+
+    #[test]
+    fn load_directory_path_returns_io_error() {
+        let dir = TempDir::new().expect("tempdir");
+        // Trying to read a directory as a file should give an I/O error
+        let result = Config::load(dir.path());
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MediError::Io(_) => {} // expected
+            other => panic!("expected Io error, got: {other:?}"),
+        }
+    }
 }

@@ -937,4 +937,104 @@ mod tests {
         let result = scanner.scan_file(&txt_file);
         assert!(result.is_err(), "non-video file should return error");
     }
+
+    // -----------------------------------------------------------------------
+    // Empty directory
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_empty_directory_returns_empty_results() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let results = scanner.scan_folder(source.path()).unwrap();
+        assert!(results.is_empty(), "empty directory should produce no results");
+    }
+
+    // -----------------------------------------------------------------------
+    // Subtitles disabled
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_with_subtitles_disabled_discovers_no_subs() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        let video_name = "The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv";
+        fs::write(source.path().join(video_name), b"video").unwrap();
+        fs::write(
+            source
+                .path()
+                .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt"),
+            b"subtitle",
+        )
+        .unwrap();
+
+        let mut config = config_with_output(output.path());
+        config.subtitles.enabled = false;
+        let scanner = Scanner::new(config);
+        let results = scanner.scan_folder(source.path()).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(
+            results[0].subtitles.is_empty(),
+            "subtitles should not be discovered when disabled"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // In-place rename (no output_dir)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_file_in_place_proposed_path_relative_to_source() {
+        let source = TempDir::new().unwrap();
+
+        let video = source
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        // No output_dir = in-place rename
+        let config = Config::default();
+        let scanner = Scanner::new(config);
+        let result = scanner.scan_file(&video).unwrap();
+
+        // Proposed path should be relative to source's parent, not an absolute output dir
+        assert!(
+            result.proposed_path.starts_with(source.path()),
+            "in-place proposed_path {:?} should be under source dir {:?}",
+            result.proposed_path,
+            source.path()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter: empty filter returns all
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn filter_empty_returns_all_results() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        fs::write(
+            source
+                .path()
+                .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv"),
+            b"video1",
+        )
+        .unwrap();
+        fs::write(source.path().join("The.Office.S02E03.720p.mkv"), b"video2").unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let results = scanner.scan_folder(source.path()).unwrap();
+
+        let filtered = Scanner::filter_results(&results, &ScanFilter::default());
+        assert_eq!(
+            filtered.len(),
+            results.len(),
+            "default filter should return all results"
+        );
+    }
 }

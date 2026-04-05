@@ -496,3 +496,203 @@ pub struct ReviewQueueEntry {
     /// Current review status.
     pub status: ReviewStatus,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // -----------------------------------------------------------------------
+    // Helper: build a minimal ScanResult for filter tests
+    // -----------------------------------------------------------------------
+
+    fn scan_result(title: &str, media_type: MediaType, status: ScanStatus) -> ScanResult {
+        ScanResult {
+            source_path: PathBuf::from(format!("/src/{title}.mkv")),
+            media_info: MediaInfo {
+                title: title.to_string(),
+                media_type,
+                year: Some(2024),
+                season: None,
+                episodes: vec![],
+                resolution: None,
+                video_codec: None,
+                audio_codec: None,
+                source: None,
+                release_group: None,
+                container: "mkv".to_string(),
+                language: None,
+                confidence: ParseConfidence::High,
+            },
+            proposed_path: PathBuf::from(format!("/dst/{title}.mkv")),
+            subtitles: vec![],
+            status,
+            ambiguity_reason: None,
+            alternatives: vec![],
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ScanFilter::matches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn filter_default_matches_everything() {
+        let filter = ScanFilter::default();
+        let result = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        assert!(filter.matches(&result));
+    }
+
+    #[test]
+    fn filter_by_media_type_matches() {
+        let filter = ScanFilter {
+            media_type: Some(MediaType::Movie),
+            ..ScanFilter::default()
+        };
+        let movie = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        let series = scan_result("The Office", MediaType::Series, ScanStatus::Ok);
+        assert!(filter.matches(&movie));
+        assert!(!filter.matches(&series));
+    }
+
+    #[test]
+    fn filter_by_status_matches() {
+        let filter = ScanFilter {
+            status: Some(ScanStatus::Conflict),
+            ..ScanFilter::default()
+        };
+        let ok = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        let conflict = scan_result("Inception", MediaType::Movie, ScanStatus::Conflict);
+        assert!(!filter.matches(&ok));
+        assert!(filter.matches(&conflict));
+    }
+
+    #[test]
+    fn filter_by_title_search_case_insensitive() {
+        let filter = ScanFilter {
+            title_search: Some("inception".to_string()),
+            ..ScanFilter::default()
+        };
+        let result = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        assert!(filter.matches(&result));
+    }
+
+    #[test]
+    fn filter_by_title_search_substring() {
+        let filter = ScanFilter {
+            title_search: Some("cept".to_string()),
+            ..ScanFilter::default()
+        };
+        let result = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        assert!(filter.matches(&result));
+    }
+
+    #[test]
+    fn filter_by_title_search_no_match() {
+        let filter = ScanFilter {
+            title_search: Some("nonexistent".to_string()),
+            ..ScanFilter::default()
+        };
+        let result = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        assert!(!filter.matches(&result));
+    }
+
+    #[test]
+    fn filter_combined_all_criteria_must_match() {
+        let filter = ScanFilter {
+            media_type: Some(MediaType::Movie),
+            status: Some(ScanStatus::Ok),
+            title_search: Some("inception".to_string()),
+        };
+        let matching = scan_result("Inception", MediaType::Movie, ScanStatus::Ok);
+        assert!(filter.matches(&matching));
+
+        // Wrong media type
+        let wrong_type = scan_result("Inception", MediaType::Series, ScanStatus::Ok);
+        assert!(!filter.matches(&wrong_type));
+
+        // Wrong status
+        let wrong_status = scan_result("Inception", MediaType::Movie, ScanStatus::Conflict);
+        assert!(!filter.matches(&wrong_status));
+
+        // Wrong title
+        let wrong_title = scan_result("The Office", MediaType::Movie, ScanStatus::Ok);
+        assert!(!filter.matches(&wrong_title));
+    }
+
+    // -----------------------------------------------------------------------
+    // Display implementations
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn media_type_display() {
+        assert_eq!(MediaType::Movie.to_string(), "Movie");
+        assert_eq!(MediaType::Series.to_string(), "Series");
+        assert_eq!(MediaType::Anime.to_string(), "Anime");
+    }
+
+    #[test]
+    fn subtitle_type_display() {
+        assert_eq!(SubtitleType::Forced.to_string(), "forced");
+        assert_eq!(SubtitleType::Sdh.to_string(), "sdh");
+        assert_eq!(SubtitleType::Hi.to_string(), "hi");
+        assert_eq!(SubtitleType::Commentary.to_string(), "commentary");
+    }
+
+    #[test]
+    fn watcher_mode_display() {
+        assert_eq!(WatcherMode::Auto.to_string(), "auto");
+        assert_eq!(WatcherMode::Review.to_string(), "review");
+    }
+
+    #[test]
+    fn watcher_action_display() {
+        assert_eq!(WatcherAction::Renamed.to_string(), "renamed");
+        assert_eq!(WatcherAction::Queued.to_string(), "queued");
+        assert_eq!(WatcherAction::Error.to_string(), "error");
+    }
+
+    #[test]
+    fn review_status_display() {
+        assert_eq!(ReviewStatus::Pending.to_string(), "pending");
+        assert_eq!(ReviewStatus::Approved.to_string(), "approved");
+        assert_eq!(ReviewStatus::Rejected.to_string(), "rejected");
+    }
+
+    // -----------------------------------------------------------------------
+    // Default implementations
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn discovery_toggles_default_all_true() {
+        let toggles = DiscoveryToggles::default();
+        assert!(toggles.sidecar);
+        assert!(toggles.subs_subfolder);
+        assert!(toggles.nested_language_folders);
+        assert!(toggles.vobsub_pairs);
+    }
+
+    #[test]
+    fn conflict_strategy_default_is_skip() {
+        assert_eq!(ConflictStrategy::default(), ConflictStrategy::Skip);
+    }
+
+    #[test]
+    fn rename_operation_default_is_move() {
+        assert_eq!(RenameOperation::default(), RenameOperation::Move);
+    }
+
+    #[test]
+    fn non_preferred_action_default_is_ignore() {
+        assert_eq!(NonPreferredAction::default(), NonPreferredAction::Ignore);
+    }
+
+    #[test]
+    fn watcher_config_default_values() {
+        let wc = WatcherConfig::default();
+        assert_eq!(wc.path, PathBuf::new());
+        assert_eq!(wc.mode, WatcherMode::Auto);
+        assert!(wc.active);
+        assert_eq!(wc.debounce_seconds, 5);
+    }
+}

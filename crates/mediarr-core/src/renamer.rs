@@ -865,4 +865,100 @@ mod tests {
         assert_eq!(renamer.conflict_strategy, ConflictStrategy::NumericSuffix);
         assert!(!renamer.create_directories);
     }
+
+    // -----------------------------------------------------------------------
+    // Empty plan
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dry_run_empty_plan_returns_empty() {
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
+        let plan = RenamePlan {
+            entries: vec![],
+        };
+        let results = renamer.dry_run(&plan);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn execute_empty_plan_returns_empty() {
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
+        let plan = RenamePlan {
+            entries: vec![],
+        };
+        let results = renamer.execute(&plan);
+        assert!(results.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // create_directories = false
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn execute_create_directories_false_fails_when_parent_missing() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("movie.mkv");
+        std::fs::write(&src, b"content").unwrap();
+        let dest = dir.path().join("nonexistent").join("deep").join("Movie.mkv");
+
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, false);
+
+        let plan = RenamePlan {
+            entries: vec![RenamePlanEntry {
+                source_path: src.clone(),
+                dest_path: dest.clone(),
+            }],
+        };
+
+        let results = renamer.execute(&plan);
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].success, "should fail when parent dir doesn't exist and create_directories is false");
+        assert!(src.exists(), "source should still exist after failed move");
+    }
+
+    // -----------------------------------------------------------------------
+    // Dry-run with overwrite strategy
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dry_run_overwrite_strategy_marks_success() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("movie.mkv");
+        std::fs::write(&src, b"source").unwrap();
+        let dest = dir.path().join("existing.mkv");
+        std::fs::write(&dest, b"existing").unwrap();
+
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Overwrite, true);
+
+        let plan = RenamePlan {
+            entries: vec![RenamePlanEntry {
+                source_path: src,
+                dest_path: dest.clone(),
+            }],
+        };
+
+        let results = renamer.dry_run(&plan);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success, "overwrite should report success in dry run");
+        // Dry run should NOT modify the existing file
+        assert_eq!(
+            std::fs::read_to_string(&dest).unwrap(),
+            "existing",
+            "dry run must not touch filesystem"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_numeric_suffix: no extension
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_suffix_works_without_extension() {
+        let dir = TempDir::new().unwrap();
+        let dest = dir.path().join("Movie");
+        std::fs::write(&dest, b"existing").unwrap();
+
+        let resolved = resolve_numeric_suffix(&dest).unwrap();
+        assert_eq!(resolved, dir.path().join("Movie (1)"));
+    }
 }

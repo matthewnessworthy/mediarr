@@ -574,12 +574,16 @@ mod tests {
 
     #[test]
     fn sidecar_finds_subtitle_without_language() {
+        // Use a named subdirectory so the parent folder name is deterministic
+        // and won't accidentally match an ISO 639-3 language code from the
+        // random tempdir name.
         let dir = TempDir::new().unwrap();
-        touch(&dir.path().join("Movie.mkv"));
-        touch(&dir.path().join("Movie.srt"));
+        let media_dir = dir.path().join("media");
+        touch(&media_dir.join("Movie.mkv"));
+        touch(&media_dir.join("Movie.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
 
         let sidecar: Vec<_> = results
             .iter()
@@ -857,5 +861,192 @@ mod tests {
         let result = generate_proposed_path("Movie", "en", None, "srt");
         let s = result.to_str().unwrap();
         assert!(!s.contains(".."), "should not have double dots");
+    }
+
+    // -----------------------------------------------------------------------
+    // Language Detection: edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn language_from_string_returns_none_for_gibberish() {
+        let result = detect_language_from_string("xyzzy");
+        // "xyzzy" is not a valid ISO code or language name
+        assert!(
+            result.is_none(),
+            "gibberish should not match any language, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn language_from_string_returns_none_for_empty() {
+        let result = detect_language_from_string("");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn language_from_string_returns_none_for_numbers_only() {
+        let result = detect_language_from_string("12345");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn language_from_string_iso_639_1_code() {
+        let result = detect_language_from_string("en");
+        assert_eq!(result, Some("en".to_string()));
+    }
+
+    #[test]
+    fn language_from_string_iso_639_3_code() {
+        let result = detect_language_from_string("eng");
+        assert_eq!(result, Some("en".to_string()));
+    }
+
+    #[test]
+    fn language_from_string_full_name() {
+        let result = detect_language_from_string("Japanese");
+        assert_eq!(result, Some("ja".to_string()));
+    }
+
+    #[test]
+    fn language_skips_type_indicators_in_filename() {
+        // "forced" and "sdh" should not be treated as language codes
+        let lang = detect_language("Movie.forced.srt", None);
+        assert_eq!(lang, "und");
+        let lang = detect_language("Movie.sdh.srt", None);
+        assert_eq!(lang, "und");
+    }
+
+    #[test]
+    fn language_prefers_iso_639_1_over_639_3() {
+        // "eng" is ISO 639-3 for English, should return "en" (639-1)
+        let lang = detect_language("Movie.eng.srt", None);
+        assert_eq!(lang, "en");
+    }
+
+    #[test]
+    fn language_iso_639_3_without_639_1_returns_639_3() {
+        // "jpn" is ISO 639-3 for Japanese which has a 639-1 code "ja"
+        let lang = detect_language("Movie.jpn.srt", None);
+        assert_eq!(lang, "ja");
+    }
+
+    // -----------------------------------------------------------------------
+    // Type Detection: edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn type_detects_hearing_impaired_multi_segment() {
+        let t = detect_subtitle_type("Movie.en.hearing.impaired.srt");
+        assert_eq!(t, Some(SubtitleType::Hi));
+    }
+
+    #[test]
+    fn type_detection_is_case_insensitive() {
+        let t = detect_subtitle_type("Movie.en.FORCED.srt");
+        assert_eq!(t, Some(SubtitleType::Forced));
+    }
+
+    #[test]
+    fn type_none_for_plain_language_only() {
+        let t = detect_subtitle_type("Movie.en.srt");
+        assert_eq!(t, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Path Generation: edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn path_with_639_3_language_code() {
+        let path = generate_proposed_path("Movie", "jpn", None, "srt");
+        assert_eq!(path, PathBuf::from("Movie.jpn.srt"));
+    }
+
+    #[test]
+    fn path_with_und_language() {
+        let path = generate_proposed_path("Movie", "und", None, "srt");
+        assert_eq!(path, PathBuf::from("Movie.und.srt"));
+    }
+
+    #[test]
+    fn path_with_commentary_type() {
+        let path =
+            generate_proposed_path("Movie", "en", Some(&SubtitleType::Commentary), "srt");
+        assert_eq!(path, PathBuf::from("Movie.en.commentary.srt"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Discovery: deterministic parent folder tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sidecar_ignores_vobsub_files() {
+        let dir = TempDir::new().unwrap();
+        let media_dir = dir.path().join("media");
+        touch(&media_dir.join("Movie.mkv"));
+        touch(&media_dir.join("Movie.idx"));
+        touch(&media_dir.join("Movie.sub"));
+        touch(&media_dir.join("Movie.en.srt"));
+
+        let disc = discovery_all_enabled();
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+
+        let sidecar: Vec<_> = results
+            .iter()
+            .filter(|s| s.discovery_method == DiscoveryMethod::Sidecar)
+            .collect();
+        // Should only find the .srt, not the .idx or .sub
+        assert_eq!(sidecar.len(), 1, "sidecar should exclude VobSub files");
+        assert!(sidecar[0]
+            .source_path
+            .extension()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            == "srt");
+    }
+
+    #[test]
+    fn nested_language_skips_subs_folder_names() {
+        let dir = TempDir::new().unwrap();
+        let media_dir = dir.path().join("media");
+        touch(&media_dir.join("Movie.mkv"));
+
+        // "Subs" folder should be handled by subfolder discovery, not nested language
+        let subs_dir = media_dir.join("Subs");
+        touch(&subs_dir.join("Movie.srt"));
+
+        let disc = SubtitleDiscovery::new(
+            DiscoveryToggles {
+                sidecar: false,
+                subs_subfolder: false,
+                nested_language_folders: true,
+                vobsub_pairs: false,
+            },
+            vec!["en".into()],
+        );
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+
+        let nested: Vec<_> = results
+            .iter()
+            .filter(|s| s.discovery_method == DiscoveryMethod::NestedLanguage)
+            .collect();
+        assert!(
+            nested.is_empty(),
+            "Subs/ folder should not be treated as a language folder"
+        );
+    }
+
+    #[test]
+    fn no_subtitles_discovered_in_empty_dir() {
+        let dir = TempDir::new().unwrap();
+        let media_dir = dir.path().join("media");
+        touch(&media_dir.join("Movie.mkv"));
+        // No subtitle files at all
+
+        let disc = discovery_all_enabled();
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+        assert!(results.is_empty(), "should find no subtitles in empty dir");
     }
 }
