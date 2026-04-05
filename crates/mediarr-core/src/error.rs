@@ -79,6 +79,13 @@ pub enum MediError {
         path: PathBuf,
     },
 
+    /// All numeric suffixes (1-99) exhausted for conflict resolution.
+    #[error("conflict resolution exhausted: all suffixes (1)--(99) exist for {}", path.display())]
+    ConflictResolutionExhausted {
+        /// The base destination path that has all suffixes taken.
+        path: PathBuf,
+    },
+
     // -- Path encoding errors --
     /// Path contains non-UTF-8 bytes and cannot be stored reliably.
     /// We error rather than silently losing data via `to_string_lossy()`.

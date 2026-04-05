@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS watcher_events (
 );
 CREATE INDEX IF NOT EXISTS idx_watcher_events_watch_path ON watcher_events(watch_path);
 CREATE INDEX IF NOT EXISTS idx_watcher_events_timestamp ON watcher_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_watcher_events_path_time ON watcher_events(watch_path, timestamp DESC);
 
 CREATE TABLE IF NOT EXISTS review_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +86,12 @@ impl HistoryDb {
         }
 
         let conn = Connection::open(path)?;
+
+        // Enable WAL mode for concurrent CLI/GUI access and set busy timeout
+        // to avoid "database is locked" errors when both processes access the DB.
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(WATCHER_SCHEMA)?;
 
@@ -1219,5 +1226,35 @@ mod tests {
 
         let entries = db.list_review_queue(None, None).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_wal_mode_enabled() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+        let mode: String = db
+            .conn
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode, "wal", "Journal mode should be WAL");
+    }
+
+    #[test]
+    fn test_composite_index_exists() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+        let mut stmt = db
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index'")
+            .unwrap();
+        let indexes: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            indexes.contains(&"idx_watcher_events_path_time".to_string()),
+            "Composite index idx_watcher_events_path_time should exist"
+        );
     }
 }

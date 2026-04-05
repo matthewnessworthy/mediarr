@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::config::GeneralConfig;
+use crate::error::{MediError, Result};
 use crate::types::{ConflictStrategy, RenameOperation, RenameResult};
 
 /// A single entry in a rename plan: source -> dest.
@@ -108,19 +109,30 @@ impl Renamer {
                         });
                     }
                     ConflictStrategy::NumericSuffix => {
-                        let suffixed = resolve_numeric_suffix(&entry.dest_path);
-                        debug!(
-                            source = %entry.source_path.display(),
-                            dest = %suffixed.display(),
-                            "dry_run: would use numeric suffix"
-                        );
-                        seen_dests.insert(suffixed.clone());
-                        results.push(RenameResult {
-                            source_path: entry.source_path.clone(),
-                            dest_path: suffixed,
-                            success: true,
-                            error: None,
-                        });
+                        match resolve_numeric_suffix(&entry.dest_path) {
+                            Ok(suffixed) => {
+                                debug!(
+                                    source = %entry.source_path.display(),
+                                    dest = %suffixed.display(),
+                                    "dry_run: would use numeric suffix"
+                                );
+                                seen_dests.insert(suffixed.clone());
+                                results.push(RenameResult {
+                                    source_path: entry.source_path.clone(),
+                                    dest_path: suffixed,
+                                    success: true,
+                                    error: None,
+                                });
+                            }
+                            Err(e) => {
+                                results.push(RenameResult {
+                                    source_path: entry.source_path.clone(),
+                                    dest_path: entry.dest_path.clone(),
+                                    success: false,
+                                    error: Some(e.to_string()),
+                                });
+                            }
+                        }
                     }
                 }
             } else {
@@ -187,13 +199,25 @@ impl Renamer {
                         entry.dest_path.clone()
                     }
                     ConflictStrategy::NumericSuffix => {
-                        let suffixed = resolve_numeric_suffix(&entry.dest_path);
-                        debug!(
-                            original = %entry.dest_path.display(),
-                            suffixed = %suffixed.display(),
-                            "using numeric suffix to avoid conflict"
-                        );
-                        suffixed
+                        match resolve_numeric_suffix(&entry.dest_path) {
+                            Ok(suffixed) => {
+                                debug!(
+                                    original = %entry.dest_path.display(),
+                                    suffixed = %suffixed.display(),
+                                    "using numeric suffix to avoid conflict"
+                                );
+                                suffixed
+                            }
+                            Err(e) => {
+                                results.push(RenameResult {
+                                    source_path: entry.source_path.clone(),
+                                    dest_path: entry.dest_path.clone(),
+                                    success: false,
+                                    error: Some(e.to_string()),
+                                });
+                                continue;
+                            }
+                        }
                     }
                 }
             } else {
@@ -337,7 +361,9 @@ impl Renamer {
 ///
 /// Given a path like `/dest/Movie.mkv`, tries `/dest/Movie (1).mkv`,
 /// `/dest/Movie (2).mkv`, etc. up to 99. Returns the first non-existing path.
-fn resolve_numeric_suffix(dest: &Path) -> PathBuf {
+///
+/// Returns `MediError::ConflictResolutionExhausted` if all 99 suffixes are taken.
+fn resolve_numeric_suffix(dest: &Path) -> Result<PathBuf> {
     let parent = dest.parent().unwrap_or_else(|| Path::new(""));
     let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
     let ext = dest.extension().and_then(|e| e.to_str());
@@ -349,16 +375,14 @@ fn resolve_numeric_suffix(dest: &Path) -> PathBuf {
         };
         let candidate = parent.join(&filename);
         if !candidate.exists() {
-            return candidate;
+            return Ok(candidate);
         }
     }
 
-    // Exhausted all 99 suffixes -- return (99) regardless
-    let filename = match ext {
-        Some(e) => format!("{stem} (99).{e}"),
-        None => format!("{stem} (99)"),
-    };
-    parent.join(&filename)
+    // Exhausted all 99 suffixes -- return error instead of silent overwrite
+    Err(MediError::ConflictResolutionExhausted {
+        path: dest.to_path_buf(),
+    })
 }
 
 #[cfg(test)]
@@ -786,7 +810,7 @@ mod tests {
         let dest = dir.path().join("Movie.mkv");
         std::fs::write(&dest, b"existing").unwrap();
 
-        let resolved = resolve_numeric_suffix(&dest);
+        let resolved = resolve_numeric_suffix(&dest).unwrap();
         assert_eq!(resolved, dir.path().join("Movie (1).mkv"));
     }
 
@@ -798,8 +822,29 @@ mod tests {
         std::fs::write(dir.path().join("Movie (1).mkv"), b"copy1").unwrap();
         std::fs::write(dir.path().join("Movie (2).mkv"), b"copy2").unwrap();
 
-        let resolved = resolve_numeric_suffix(&dest);
+        let resolved = resolve_numeric_suffix(&dest).unwrap();
         assert_eq!(resolved, dir.path().join("Movie (3).mkv"));
+    }
+
+    #[test]
+    fn resolve_numeric_suffix_errors_when_exhausted() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join("Movie.mkv");
+        std::fs::write(&base, b"base").unwrap();
+
+        // Create all 99 suffix files
+        for i in 1..=99 {
+            let suffixed = dir.path().join(format!("Movie ({i}).mkv"));
+            std::fs::write(&suffixed, b"taken").unwrap();
+        }
+
+        let result = resolve_numeric_suffix(&base);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exhausted"),
+            "Error should mention exhaustion: {err}"
+        );
     }
 
     // -----------------------------------------------------------------------
