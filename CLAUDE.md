@@ -21,7 +21,7 @@ Frontend lives in `frontend/` — Svelte + shadcn-svelte + TailwindCSS.
 | Layer | Technology |
 |-------|-----------|
 | Language | Rust (2021 edition) |
-| Desktop shell | Tauri v2 |
+| Desktop shell | Tauri |
 | Frontend framework | Svelte (not React, not Vue) |
 | UI components | shadcn-svelte |
 | CSS | TailwindCSS |
@@ -31,7 +31,9 @@ Frontend lives in `frontend/` — Svelte + shadcn-svelte + TailwindCSS.
 | Database | SQLite via `rusqlite` (rename history, undo) |
 | Config format | TOML via `serde` + `toml` crate |
 | Config paths | `dirs` crate for platform-appropriate locations |
-| Async runtime | `tokio` (Tauri v2 default) |
+| Async runtime | `tokio` (Tauri default) |
+
+> **Versions:** For exact dependency versions, see `Cargo.toml` (Rust crates) and `frontend/package.json` (npm packages). This document describes technology choices, not version pins.
 
 ## Key design decisions
 
@@ -100,11 +102,11 @@ Renames are moves or copies. The application never deletes user files. "Ignore" 
 
 ### notify
 
-- Use `notify` v6+ for filesystem watching
+- Use `notify` for filesystem watching (see Cargo.toml for exact version)
 - Always debounce events — files from torrent clients and browsers arrive progressively
 - Default debounce: 5 seconds after last event for a given file
 
-### Tauri v2
+### Tauri
 
 - Tauri commands are async by default
 - Use `tauri::State<>` for shared state (config, watcher handles, database connection)
@@ -160,7 +162,7 @@ Mediarr is a cross-platform desktop and CLI application for renaming and organis
 
 ### Constraints
 
-- **Tech stack**: Rust + Tauri v2 + Svelte + shadcn-svelte + TailwindCSS — decided and non-negotiable
+- **Tech stack**: Rust + Tauri + Svelte + shadcn-svelte + TailwindCSS — decided and non-negotiable
 - **Filename parsing**: Must use `hunch` crate — not a custom parser
 - **Config format**: TOML — human-editable, comment-friendly
 - **History storage**: SQLite via `rusqlite`
@@ -173,106 +175,87 @@ Mediarr is a cross-platform desktop and CLI application for renaming and organis
 <!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
-## Recommended Stack
+> **Version source of truth:** See `Cargo.toml` files for Rust crate versions and `frontend/package.json` for npm package versions. The tables below describe technology choices and rationale, not version pins.
+
 ### Core Framework (Rust Backend)
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Rust | 2021 edition | Language | Decided constraint. Cross-platform, safe, fast. | HIGH |
-| Tauri | 2.10.x | Desktop shell | Decided constraint. Tauri v2 is mature (released Oct 2024, now at 2.10.3). Actively maintained with frequent releases. | HIGH |
-| tokio | 1.50.x | Async runtime | Tauri v2's default async runtime. No reason to use anything else. | HIGH |
-| hunch | 1.1.7 | Filename parsing | Decided constraint. Rust-native guessit port. Claims 99.8% accuracy. Published on crates.io, actively maintained. Supports batch parsing with directory context for better title/type detection. | HIGH |
-| clap | 4.6.x | CLI framework | Decided constraint. Derive API (`#[derive(Parser)]`) for ergonomic CLI definition. Stable v4 line, very actively maintained. | HIGH |
-| rusqlite | 0.39.0 | SQLite database | Decided constraint. Ergonomic SQLite wrapper. Use `bundled` feature to compile SQLite into binary -- avoids system dependency issues on all platforms. Bundles SQLite 3.51.3. | HIGH |
-| serde | 1.0.228 | Serialization | De facto Rust serialization framework. Required for TOML config, JSON CLI output, and Tauri IPC. | HIGH |
-| toml | 1.1.2 | TOML parsing | Decided constraint. Serde-compatible TOML parser/serializer. v1.1.2 supports TOML spec 1.1.0. | HIGH |
-| notify | 8.2.0 | Filesystem watching | Cross-platform filesystem event library. **NOTE: CLAUDE.md says "v6+" but v6 never existed.** Versions went 5.x -> 7.x -> 8.x. Use v8.2.0 (latest stable). v9.0.0-rc.2 is in release candidate but not stable yet. | HIGH |
-| notify-debouncer-full | 0.7.0 | Event debouncing | Companion to notify. Provides full-featured debouncing (file rename tracking, cache). Depends on notify ^8.2.0. Use this instead of rolling custom debounce logic. | HIGH |
-| dirs | 6.0.0 | Platform paths | Decided constraint. Platform-appropriate config/data/cache directories. | HIGH |
-| thiserror | 2.0.18 | Error types (library) | Standard for library error types. Use in mediarr-core. v2.0 is the current major line. | HIGH |
-| anyhow | 1.0.102 | Error handling (binaries) | Standard for application-level error handling. Use in mediarr-cli and mediarr-tauri. | HIGH |
-| tracing | 0.1.44 | Structured logging | Decided constraint. Async-aware structured logging. De facto Rust logging standard. | HIGH |
-| tracing-subscriber | 0.3.23 | Log formatting | Required companion to tracing. Provides formatters, filters, and layer composition. | HIGH |
-| isolang | 2.4.0 | ISO 639 language codes | Converts between ISO 639-1 (2-letter), 639-3 (3-letter) codes and English names. Statically embedded tables -- no runtime lookup needed. Enable `english_names` and `lowercase_names` features for subtitle language detection from folder/filename strings. | MEDIUM |
+| Technology | Purpose | Why |
+|------------|---------|-----|
+| Rust (2021 edition) | Language | Decided constraint. Cross-platform, safe, fast. |
+| Tauri | Desktop shell | Decided constraint. Actively maintained with frequent releases. |
+| tokio | Async runtime | Tauri's default async runtime. |
+| hunch | Filename parsing | Decided constraint. Rust-native guessit port. Supports batch parsing with directory context. |
+| clap | CLI framework | Decided constraint. Derive API (`#[derive(Parser)]`) for ergonomic CLI definition. |
+| rusqlite | SQLite database | Decided constraint. Ergonomic SQLite wrapper. Use `bundled` feature to compile SQLite into binary. |
+| serde | Serialization | De facto Rust serialization framework. Required for TOML config, JSON CLI output, and Tauri IPC. |
+| toml | TOML parsing | Decided constraint. Serde-compatible TOML parser/serializer. |
+| notify | Filesystem watching | Cross-platform filesystem event library. Use stable release (not RC). |
+| notify-debouncer-full | Event debouncing | Companion to notify. Provides full-featured debouncing (file rename tracking, cache). |
+| dirs | Platform paths | Decided constraint. Platform-appropriate config/data/cache directories. |
+| thiserror | Error types (library) | Standard for library error types. Use in mediarr-core. |
+| anyhow | Error handling (binaries) | Standard for application-level error handling. Use in mediarr-cli and mediarr-tauri. |
+| tracing | Structured logging | Decided constraint. Async-aware structured logging. De facto Rust logging standard. |
+| tracing-subscriber | Log formatting | Required companion to tracing. Provides formatters, filters, and layer composition. |
+| isolang | ISO 639 language codes | Converts between ISO 639-1/639-3 codes and English names. Enable `english_names` and `lowercase_names` features. |
+
 ### Frontend (Svelte/Web)
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Svelte | 5.55.x | UI framework | Decided constraint. Svelte 5 with runes syntax ($state, $derived, $effect). Fully stable, actively maintained. | HIGH |
-| SvelteKit | 2.55.x | App framework | Tauri officially recommends SvelteKit over plain Svelte. Provides routing, static adapter for Tauri. Use `@sveltejs/adapter-static` with SSR disabled. | HIGH |
-| shadcn-svelte | 1.2.5 | UI components | Decided constraint. Copy-paste component library built on Bits UI. Fully supports Svelte 5 + Tailwind v4. Uses OKLCH colors and `tw-animate-css`. | HIGH |
-| TailwindCSS | 4.2.x | CSS | Decided constraint. v4 uses CSS-first configuration (no `tailwind.config.js`). 5x faster full builds, 100x faster incremental. shadcn-svelte fully supports v4. | HIGH |
-| @tauri-apps/api | 2.10.x | Tauri IPC | JavaScript bindings for Tauri commands. `invoke()` for calling Rust functions. Keep version synced with tauri crate. | HIGH |
-| @tauri-apps/plugin-dialog | ~2.6.0 | Native dialogs | File/folder open/save dialogs. Keep version synced with Rust counterpart. | HIGH |
-| @tauri-apps/plugin-fs | ~2.4.5 | Filesystem access | Frontend filesystem access with permission scoping. Keep version synced with Rust counterpart. | HIGH |
-| bits-ui | latest | Headless primitives | Underlying headless components for shadcn-svelte. Install latest -- shadcn-svelte manages compatibility. | MEDIUM |
-| tailwind-variants | latest | Style variants | Used by shadcn-svelte for component variant management. | HIGH |
-| clsx + tailwind-merge | latest | Class utilities | Class name merging for Tailwind. Required by shadcn-svelte. | HIGH |
-| tw-animate-css | latest | Animations | Replaces deprecated `tailwindcss-animate` for Tailwind v4. Required by shadcn-svelte. | HIGH |
-| @lucide/svelte | latest | Icons | Icon library used by shadcn-svelte. Replaced `lucide-svelte` in Svelte 5 migration. | HIGH |
+| Technology | Purpose | Why |
+|------------|---------|-----|
+| Svelte | UI framework | Decided constraint. Svelte 5 runes syntax ($state, $derived, $effect). |
+| SvelteKit | App framework | Tauri officially recommends SvelteKit. Provides routing, static adapter. Use `@sveltejs/adapter-static` with SSR disabled. |
+| shadcn-svelte | UI components | Decided constraint. Copy-paste component library built on Bits UI. Uses OKLCH colors and `tw-animate-css`. |
+| TailwindCSS | CSS | Decided constraint. CSS-first configuration (no `tailwind.config.js`). |
+| @tauri-apps/api | Tauri IPC | JavaScript bindings for Tauri commands. `invoke()` for calling Rust functions. Keep version synced with tauri crate. |
+| @tauri-apps/plugin-dialog | Native dialogs | File/folder open/save dialogs. Keep version synced with Rust counterpart. |
+| @tauri-apps/plugin-fs | Filesystem access | Frontend filesystem access with permission scoping. Keep version synced with Rust counterpart. |
+| bits-ui | Headless primitives | Underlying headless components for shadcn-svelte. |
+| tailwind-variants | Style variants | Used by shadcn-svelte for component variant management. |
+| clsx + tailwind-merge | Class utilities | Class name merging for Tailwind. Required by shadcn-svelte. |
+| tw-animate-css | Animations | Replaces deprecated `tailwindcss-animate`. Required by shadcn-svelte. |
+| @lucide/svelte | Icons | Icon library used by shadcn-svelte. |
+
 ### Tauri Plugins (Rust Side)
-| Plugin | Version | Purpose | Why | Confidence |
-|--------|---------|---------|-----|------------|
-| tauri-plugin-fs | 2.4.5 | Filesystem access | Required for frontend file operations with permission scoping. | HIGH |
-| tauri-plugin-dialog | 2.6.0 | Native dialogs | Open folder/file dialogs for scan paths and output directories. | HIGH |
-## Alternatives Considered
+| Plugin | Purpose | Why |
+|--------|---------|-----|
+| tauri-plugin-fs | Filesystem access | Required for frontend file operations with permission scoping. |
+| tauri-plugin-dialog | Native dialogs | Open folder/file dialogs for scan paths and output directories. |
+
+### Alternatives Considered
 | Category | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| Language codes | `isolang` | `codes-iso-639` | `isolang` has better API surface (enum-based, direct conversions). `codes-iso-639` is more modular but adds complexity for our simple use case. |
+| Language codes | `isolang` | `codes-iso-639` | `isolang` has better API surface (enum-based, direct conversions). |
 | Language codes | `isolang` | `rust_iso639` | Less actively maintained. `isolang` has cleaner API. |
-| Filesystem watching | `notify` 8.2.0 | `notify` 9.0.0-rc.2 | v9 is still in release candidate. Stick with stable v8 for production. Upgrade when v9 goes stable. |
-| Debouncing | `notify-debouncer-full` | Custom debounce | The crate handles rename tracking, file caching, and cross-platform edge cases. Rolling custom debounce would duplicate effort and miss edge cases. |
-| Database | `rusqlite` | `sqlx` | `rusqlite` is simpler for a single-file SQLite use case. `sqlx` is async but adds compile-time query checking complexity we don't need. We're not building a web server. |
-| Database | `rusqlite` | `diesel` | Diesel's ORM is overkill for simple rename history. `rusqlite` gives direct SQL control with minimal abstraction. |
-| TOML | `toml` | `toml_edit` | `toml_edit` preserves comments and formatting on round-trip. Consider for v2 if users report config file comments being lost. For v1, `toml` is simpler. |
-| CSS | Tailwind v4 | Tailwind v3 | v4 is the current line. shadcn-svelte requires v4 in its latest release. No reason to use v3. |
-| Frontend | SvelteKit | Plain Svelte | SvelteKit provides routing and static generation out of the box. Tauri docs recommend it. Plain Svelte requires manual routing (e.g., `svelte-spa-router`), which is unnecessary friction. |
-## Version Pinning Strategy
-# Cargo.toml (workspace)
-## Critical Compatibility Notes
-### Tauri Plugin Version Sync
-### SvelteKit + Tauri Configuration
+| Filesystem watching | `notify` (stable) | `notify` (RC) | Stick with stable releases for production. Upgrade when next major goes stable. |
+| Debouncing | `notify-debouncer-full` | Custom debounce | The crate handles rename tracking, file caching, and cross-platform edge cases. |
+| Database | `rusqlite` | `sqlx` | `rusqlite` is simpler for a single-file SQLite use case. |
+| Database | `rusqlite` | `diesel` | Diesel's ORM is overkill for simple rename history. |
+| TOML | `toml` | `toml_edit` | `toml_edit` preserves comments on round-trip. Consider for v2 if needed. |
+| CSS | Tailwind v4 | Tailwind v3 | v4 is the current line. shadcn-svelte requires v4. |
+| Frontend | SvelteKit | Plain Svelte | SvelteKit provides routing and static generation out of the box. |
+
+### Critical Compatibility Notes
+#### Tauri Plugin Version Sync
+Keep Rust-side `tauri-plugin-*` versions in sync with JS-side `@tauri-apps/plugin-*` versions. Match major.minor between the two.
+
+#### SvelteKit + Tauri Configuration
 - Use `@sveltejs/adapter-static`
 - Set `export const ssr = false` in root `+layout.ts`
 - Set `export const prerender = true` in root `+layout.ts`
 - Tauri load functions only run in the webview, so server-side rendering is not applicable
-### shadcn-svelte + Tailwind v4
+
+#### shadcn-svelte + Tailwind v4
 - No `tailwind.config.js` file needed
 - Use `@theme inline` directive in CSS
 - Colors are OKLCH, not HSL
 - `tailwindcss-animate` is deprecated; use `tw-animate-css` instead
-### Rust Edition
-### notify Version Correction
-### rusqlite `bundled` Feature
-### hunch Crate Status
-## Installation
-# Initialize workspace and crates (from project root)
-# Frontend (from project root)
-# Tauri CLI (globally or per-project)
-# Or: npm install -D @tauri-apps/cli
-## Sources
-- Tauri v2 releases: https://v2.tauri.app/release/ (verified 2.10.3 on 2026-03-04)
+
+#### rusqlite `bundled` Feature
+Use the `bundled` feature to compile SQLite into the binary -- avoids system dependency issues on all platforms.
+
+### Sources
+- Tauri: https://v2.tauri.app/release/
 - Tauri docs (SvelteKit): https://v2.tauri.app/start/frontend/sveltekit/
-- notify crate: https://docs.rs/crate/notify/latest (verified 8.2.0)
-- notify-debouncer-full: https://docs.rs/crate/notify-debouncer-full/latest (verified 0.7.0)
-- rusqlite: https://docs.rs/crate/rusqlite/latest (verified 0.39.0)
-- clap: https://docs.rs/crate/clap/latest (verified 4.6.0)
-- thiserror: https://docs.rs/crate/thiserror/latest (verified 2.0.18)
-- anyhow: https://docs.rs/crate/anyhow/latest (verified 1.0.102)
-- tracing: https://docs.rs/crate/tracing/latest (verified 0.1.44)
-- tracing-subscriber: https://docs.rs/crate/tracing-subscriber/latest (verified 0.3.23)
-- serde: https://docs.rs/crate/serde/latest (verified 1.0.228)
-- toml: https://docs.rs/crate/toml/latest (verified 1.1.2)
-- dirs: https://docs.rs/crate/dirs/latest (verified 6.0.0)
-- tokio: https://docs.rs/crate/tokio/latest (verified 1.50.0)
-- isolang: https://docs.rs/crate/isolang/latest (verified 2.4.0)
-- hunch: https://docs.rs/crate/hunch/latest (verified 1.1.7)
-- shadcn-svelte: https://www.shadcn-svelte.com/ (verified 1.2.5, Svelte 5 + Tailwind v4 support)
+- shadcn-svelte: https://www.shadcn-svelte.com/
 - shadcn-svelte Tailwind v4 migration: https://www.shadcn-svelte.com/docs/migration/tailwind-v4
-- Svelte releases: https://github.com/sveltejs/svelte/releases (verified 5.55.x)
-- SvelteKit: https://www.npmjs.com/package/@sveltejs/kit (verified 2.55.x)
-- Tailwind CSS: https://github.com/tailwindlabs/tailwindcss/releases (verified 4.2.2)
-- @tauri-apps/api: https://www.npmjs.com/package/@tauri-apps/api (verified 2.10.1)
-- tauri-plugin-dialog: https://docs.rs/crate/tauri-plugin-dialog/latest (verified 2.6.0)
-- tauri-plugin-fs: https://docs.rs/crate/tauri-plugin-fs/latest (verified 2.4.5)
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
