@@ -12,9 +12,13 @@
 			historyState.batches = await invoke<BatchSummary[]>('list_batches', { limit: 50 });
 			// Check undo eligibility for most recent batches (first 5)
 			for (const batch of historyState.batches.slice(0, 5)) {
-				const elig = await invoke<UndoEligibility>('check_undo', { batchId: batch.batch_id });
-				historyState.undoEligibility.set(batch.batch_id, elig);
-				historyState.undoEligibility = new Map(historyState.undoEligibility);
+				try {
+					const elig = await invoke<UndoEligibility>('check_undo', { batchId: batch.batch_id });
+					historyState.undoEligibility.set(batch.batch_id, elig);
+					historyState.undoEligibility = new Map(historyState.undoEligibility);
+				} catch (e) {
+					console.warn(`Failed to check undo for batch ${batch.batch_id}:`, e);
+				}
 			}
 		} finally {
 			historyState.loading = false;

@@ -57,6 +57,7 @@
 	<button
 		type="button"
 		onclick={onToggle}
+		aria-expanded={expanded}
 		class="flex w-full items-center gap-4 px-1 py-3 text-left transition-colors hover:bg-accent/20 focus-ring"
 		style="transition-duration: var(--duration-fast);"
 	>

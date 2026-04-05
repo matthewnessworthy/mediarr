@@ -93,6 +93,7 @@
 	<!-- Collapsed row -->
 	<button
 		type="button"
+		aria-expanded={expanded}
 		class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-accent/20 transition-colors focus-ring"
 		style="transition-duration: var(--duration-fast);"
 		onclick={handleRowClick}
