@@ -7,21 +7,21 @@ description = "Core library for Mediarr media file renaming and organisation"
 [dependencies]
 hunch = "1.1.7"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 toml = "1.1.2"
 dirs = "6.0.0"
-thiserror = "2.0"
-tracing = "0.1"
+thiserror = "2.0.18"
+tracing = "0.1.44"
 isolang = { version = "2.4.0", features = ["english_names", "lowercase_names"] }
 walkdir = "2.5.0"
 sanitize-filename = "0.6.0"
-regex = "1"
-uuid = { version = "1", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
+regex = "1.12.3"
+uuid = { version = "1.23.0", features = ["v4"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 notify = "8.2.0"
 notify-debouncer-full = "0.7.0"
-tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+tokio = { version = "1.51.0", features = ["rt", "sync", "time", "macros"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
