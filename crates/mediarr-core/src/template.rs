@@ -98,11 +98,28 @@ impl TemplateEngine {
         // Append any trailing text
         result.push_str(&template[last_end..]);
 
+        // Defense-in-depth: reject path traversal BEFORE any sanitization.
+        // Check raw rendered output for ".." or "." path components.
+        // collapse_dots and sanitize_component would mask these as empty strings,
+        // so we must check before those functions run.
+        for component in result.split('/') {
+            let trimmed = component.trim();
+            if trimmed == ".." || trimmed == "." {
+                return Err(MediError::InvalidTemplate(
+                    "template produces path traversal component ('.' or '..')".to_string(),
+                ));
+            }
+        }
+
         // Post-process: collapse consecutive dots
         let result = collapse_dots(&result);
 
-        // Split on '/' into path components, sanitize each
-        let components: Vec<String> = result.split('/').map(sanitize_component).collect();
+        // Split on '/' into path components, sanitize each, filter empties
+        let components: Vec<String> = result
+            .split('/')
+            .map(sanitize_component)
+            .filter(|c| !c.is_empty())
+            .collect();
 
         // Build PathBuf from components
         let mut path = PathBuf::new();
@@ -921,5 +938,54 @@ mod tests {
         // No modifier on episode
         let result = engine.render("E{episode}.{ext}", &info).unwrap();
         assert_eq!(result, PathBuf::from("E3.mkv"));
+    }
+
+    #[test]
+    fn render_rejects_path_traversal() {
+        let engine = super::TemplateEngine::new();
+        let info = MediaInfo {
+            title: "..".to_string(),
+            media_type: MediaType::Movie,
+            year: Some(2024),
+            season: None,
+            episodes: vec![],
+            resolution: None,
+            video_codec: None,
+            audio_codec: None,
+            source: None,
+            release_group: None,
+            container: "mkv".to_string(),
+            language: None,
+            confidence: ParseConfidence::High,
+        };
+        let result = engine.render("{title}/{title}.{ext}", &info);
+        assert!(result.is_err(), "Expected Err but got: {result:?}");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("path traversal"),
+            "Error should mention path traversal: {err}"
+        );
+    }
+
+    #[test]
+    fn render_rejects_dot_component() {
+        let engine = super::TemplateEngine::new();
+        let info = MediaInfo {
+            title: ".".to_string(),
+            media_type: MediaType::Movie,
+            year: Some(2024),
+            season: None,
+            episodes: vec![],
+            resolution: None,
+            video_codec: None,
+            audio_codec: None,
+            source: None,
+            release_group: None,
+            container: "mkv".to_string(),
+            language: None,
+            confidence: ParseConfidence::High,
+        };
+        let result = engine.render("{title}/{title}.{ext}", &info);
+        assert!(result.is_err());
     }
 }
