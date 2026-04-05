@@ -18,19 +18,27 @@
 
 	let dragOver = $state(false);
 	let unlisten: (() => void) | null = null;
+	let destroyed = false;
 	let recentOpen = $state(false);
 
 	onMount(async () => {
-		unlisten = await listen<{ paths: string[] }>('tauri://drag-drop', (event) => {
+		const fn = await listen<{ paths: string[] }>('tauri://drag-drop', (event) => {
 			dragOver = false;
 			const paths = event.payload.paths;
 			if (paths && paths.length > 0) {
 				onSelect(paths[0]);
 			}
 		});
+		// If component was destroyed while listen() was resolving, clean up immediately
+		if (destroyed) {
+			fn();
+		} else {
+			unlisten = fn;
+		}
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		if (unlisten) unlisten();
 	});
 

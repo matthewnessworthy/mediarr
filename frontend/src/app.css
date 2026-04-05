@@ -10,7 +10,7 @@
 	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@theme inline {
+@theme {
 	--color-background: oklch(0.985 0.003 250);
 	--color-foreground: oklch(0.145 0.008 250);
 	--color-card: oklch(0.975 0.003 250);

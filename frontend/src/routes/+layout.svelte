@@ -9,6 +9,21 @@
 
 	onMount(() => {
 		themeState.init();
+
+		// Prevent the webview from navigating to dropped files.
+		// Tauri's dragDropEnabled intercepts native drops and emits tauri://drag-drop,
+		// but without this guard the webview may still load the file URL as a fallback,
+		// which destroys the SPA and breaks subsequent navigation.
+		function preventDefaultDrop(e: Event) {
+			e.preventDefault();
+		}
+		document.addEventListener('dragover', preventDefaultDrop);
+		document.addEventListener('drop', preventDefaultDrop);
+
+		return () => {
+			document.removeEventListener('dragover', preventDefaultDrop);
+			document.removeEventListener('drop', preventDefaultDrop);
+		};
 	});
 
 	const navItems = [
@@ -17,6 +32,7 @@
 		{ href: '/history', label: 'History', icon: Clock },
 		{ href: '/settings', label: 'Settings', icon: Settings },
 	];
+
 </script>
 
 <div class="flex h-screen bg-background text-foreground">
