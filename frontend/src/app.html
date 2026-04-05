@@ -6,6 +6,13 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<!--
+			When VITE_PLAYWRIGHT=true, the mock-init module exposes mockIPC, clearMocks,
+			and mockWindows from @tauri-apps/api/mocks on window for E2E test injection.
+			In production builds, Vite dead-code-eliminates the conditional import.
+			For Playwright E2E tests, mocks are injected via addInitScript (see e2e/helpers/mock-setup.ts)
+			which runs before any page scripts, ensuring IPC calls on mount are intercepted.
+		-->
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
