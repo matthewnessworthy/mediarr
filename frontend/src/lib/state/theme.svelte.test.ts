@@ -2,6 +2,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { themeState } from './theme.svelte';
 
+// Mock matchMedia for jsdom (not natively available)
+function mockMatchMedia(prefersDark: boolean) {
+	Object.defineProperty(window, 'matchMedia', {
+		writable: true,
+		value: vi.fn().mockImplementation((query: string) => ({
+			matches: query === '(prefers-color-scheme: dark)' ? prefersDark : false,
+			media: query,
+			onchange: null,
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			dispatchEvent: vi.fn(),
+		})),
+	});
+}
+
 beforeEach(() => {
 	// Reset theme to default
 	themeState.mode = 'dark';
@@ -9,6 +26,8 @@ beforeEach(() => {
 	localStorage.clear();
 	// Reset document classes
 	document.documentElement.classList.remove('dark', 'light');
+	// Default: system prefers dark
+	mockMatchMedia(true);
 });
 
 describe('ThemeState', () => {
@@ -52,6 +71,22 @@ describe('ThemeState', () => {
 		themeState.toggle();
 		flushSync();
 		expect(localStorage.getItem('mediarr-theme')).toBe('light');
+	});
+
+	it('init respects system light preference when no localStorage', () => {
+		mockMatchMedia(false); // system prefers light
+		themeState.init();
+		flushSync();
+		expect(themeState.mode).toBe('light');
+	});
+
+	it('init respects system dark preference when no localStorage', () => {
+		mockMatchMedia(true); // system prefers dark
+		themeState.mode = 'light'; // start from light to prove init changes it
+		flushSync();
+		themeState.init();
+		flushSync();
+		expect(themeState.mode).toBe('dark');
 	});
 
 	it('toggle applies correct CSS classes to document', () => {
