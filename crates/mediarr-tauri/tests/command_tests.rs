@@ -481,6 +481,7 @@ fn list_watchers_returns_configured() {
         mode: mediarr_core::WatcherMode::Auto,
         active: true,
         debounce_seconds: 5,
+        settings: None,
     });
 
     // list_watchers command just returns config.watchers.clone()
@@ -511,6 +512,7 @@ fn watcher_e2e_auto_mode_start_process_stop() {
         mode: mediarr_core::WatcherMode::Auto,
         active: false,
         debounce_seconds: 1,
+        settings: None,
     });
 
     // -- Simulate start_watcher command --
@@ -639,6 +641,7 @@ fn watcher_e2e_review_mode_queue_and_approve() {
         mode: mediarr_core::WatcherMode::Review,
         active: false,
         debounce_seconds: 1,
+        settings: None,
     });
 
     let event_count = Arc::new(AtomicUsize::new(0));
@@ -859,6 +862,7 @@ fn watcher_config_serializes_for_tauri_ipc() {
         mode: mediarr_core::WatcherMode::Review,
         active: true,
         debounce_seconds: 10,
+        settings: None,
     };
 
     let json = serde_json::to_string(&wc).expect("should serialize");

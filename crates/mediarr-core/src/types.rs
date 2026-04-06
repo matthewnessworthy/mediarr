@@ -381,6 +381,62 @@ pub struct WatcherConfig {
     pub active: bool,
     /// Debounce duration in seconds (default 5).
     pub debounce_seconds: u64,
+    /// Per-watcher setting overrides. None or absent = use all global defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<WatcherSettings>,
+}
+
+/// Per-watcher setting overrides. Every field is optional; None means
+/// "use the global default from Config". Stored as `[watchers.settings]`
+/// in TOML.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct WatcherSettings {
+    /// Override output directory. None = use global. Empty string "" = force in-place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_dir: Option<String>,
+    /// Override rename operation (Move/Copy).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<RenameOperation>,
+    /// Override conflict strategy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conflict_strategy: Option<ConflictStrategy>,
+    /// Override create_directories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub create_directories: Option<bool>,
+    /// Override movie template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movie_template: Option<String>,
+    /// Override series template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_template: Option<String>,
+    /// Override anime template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anime_template: Option<String>,
+    /// Override subtitle enabled toggle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles_enabled: Option<bool>,
+    /// Override preferred languages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_languages: Option<Vec<String>>,
+    /// Override non-preferred action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub non_preferred_action: Option<NonPreferredAction>,
+}
+
+impl WatcherSettings {
+    /// Returns true if no fields are overridden.
+    pub fn is_empty(&self) -> bool {
+        self.output_dir.is_none()
+            && self.operation.is_none()
+            && self.conflict_strategy.is_none()
+            && self.create_directories.is_none()
+            && self.movie_template.is_none()
+            && self.series_template.is_none()
+            && self.anime_template.is_none()
+            && self.subtitles_enabled.is_none()
+            && self.preferred_languages.is_none()
+            && self.non_preferred_action.is_none()
+    }
 }
 
 /// Watcher operating mode (per WATC-02, WATC-03).
@@ -400,6 +456,7 @@ impl Default for WatcherConfig {
             mode: WatcherMode::Auto,
             active: true,
             debounce_seconds: 5,
+            settings: None,
         }
     }
 }
@@ -694,5 +751,79 @@ mod tests {
         assert_eq!(wc.mode, WatcherMode::Auto);
         assert!(wc.active);
         assert_eq!(wc.debounce_seconds, 5);
+        assert!(wc.settings.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // WatcherSettings tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn watcher_settings_default_all_none() {
+        let s = WatcherSettings::default();
+        assert!(s.output_dir.is_none());
+        assert!(s.operation.is_none());
+        assert!(s.conflict_strategy.is_none());
+        assert!(s.create_directories.is_none());
+        assert!(s.movie_template.is_none());
+        assert!(s.series_template.is_none());
+        assert!(s.anime_template.is_none());
+        assert!(s.subtitles_enabled.is_none());
+        assert!(s.preferred_languages.is_none());
+        assert!(s.non_preferred_action.is_none());
+    }
+
+    #[test]
+    fn watcher_settings_is_empty_when_all_none() {
+        let s = WatcherSettings::default();
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn watcher_settings_is_empty_false_when_any_set() {
+        let mut s = WatcherSettings::default();
+        s.output_dir = Some("/override".to_string());
+        assert!(!s.is_empty());
+
+        let mut s2 = WatcherSettings::default();
+        s2.subtitles_enabled = Some(false);
+        assert!(!s2.is_empty());
+    }
+
+    #[test]
+    fn watcher_config_without_settings_toml_backward_compat() {
+        let toml_str = r#"
+path = "/watch/test"
+mode = "auto"
+active = true
+debounce_seconds = 5
+"#;
+        let wc: WatcherConfig = toml::from_str(toml_str).expect("backward compat parse");
+        assert_eq!(wc.path, PathBuf::from("/watch/test"));
+        assert!(wc.settings.is_none());
+    }
+
+    #[test]
+    fn watcher_config_with_settings_toml_round_trip() {
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch/movies"),
+            mode: WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(WatcherSettings {
+                output_dir: Some("/custom/output".to_string()),
+                operation: Some(RenameOperation::Copy),
+                ..WatcherSettings::default()
+            }),
+        };
+
+        let toml_str = toml::to_string_pretty(&wc).expect("serialize");
+        let restored: WatcherConfig = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(wc, restored);
+        assert!(restored.settings.is_some());
+        let s = restored.settings.unwrap();
+        assert_eq!(s.output_dir, Some("/custom/output".to_string()));
+        assert_eq!(s.operation, Some(RenameOperation::Copy));
+        assert!(s.conflict_strategy.is_none());
     }
 }

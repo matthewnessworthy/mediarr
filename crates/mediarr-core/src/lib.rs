@@ -34,4 +34,5 @@ pub use watcher::WatcherManager;
 // Explicit watcher type re-exports for downstream convenience
 pub use types::{
     ReviewQueueEntry, ReviewStatus, WatcherAction, WatcherConfig, WatcherEvent, WatcherMode,
+    WatcherSettings,
 };

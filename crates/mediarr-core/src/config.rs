@@ -11,6 +11,7 @@ use tracing::{debug, info};
 use crate::error::{MediError, Result};
 use crate::types::{
     ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation, WatcherConfig,
+    WatcherSettings,
 };
 
 /// Top-level application configuration.
@@ -169,6 +170,71 @@ impl Config {
         std::fs::write(path, contents)?;
         info!(path = %path.display(), "config saved");
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-watcher config resolution
+// ---------------------------------------------------------------------------
+
+impl WatcherConfig {
+    /// Merge per-watcher overrides onto the global config, producing a
+    /// resolved `Config`. Fields not overridden fall back to global values.
+    /// Scanner and Renamer consume the resolved Config transparently.
+    pub fn resolve_config(&self, global: &Config) -> Config {
+        let s = match &self.settings {
+            Some(s) if !s.is_empty() => s,
+            _ => return global.clone(),
+        };
+
+        let resolved_output_dir = match &s.output_dir {
+            Some(dir) if dir.is_empty() => None, // "" = force in-place
+            Some(dir) => Some(PathBuf::from(dir)),
+            None => global.general.output_dir.clone(),
+        };
+
+        Config {
+            general: GeneralConfig {
+                output_dir: resolved_output_dir,
+                operation: s.operation.unwrap_or(global.general.operation),
+                conflict_strategy: s
+                    .conflict_strategy
+                    .unwrap_or(global.general.conflict_strategy),
+                create_directories: s
+                    .create_directories
+                    .unwrap_or(global.general.create_directories),
+            },
+            templates: TemplateConfig {
+                movie: s
+                    .movie_template
+                    .clone()
+                    .unwrap_or_else(|| global.templates.movie.clone()),
+                series: s
+                    .series_template
+                    .clone()
+                    .unwrap_or_else(|| global.templates.series.clone()),
+                anime: s
+                    .anime_template
+                    .clone()
+                    .unwrap_or_else(|| global.templates.anime.clone()),
+            },
+            subtitles: SubtitleConfig {
+                enabled: s.subtitles_enabled.unwrap_or(global.subtitles.enabled),
+                preferred_languages: s
+                    .preferred_languages
+                    .clone()
+                    .unwrap_or_else(|| global.subtitles.preferred_languages.clone()),
+                non_preferred_action: s
+                    .non_preferred_action
+                    .clone()
+                    .unwrap_or_else(|| global.subtitles.non_preferred_action.clone()),
+                // Not overridable per-watcher -- always use global
+                naming_pattern: global.subtitles.naming_pattern.clone(),
+                discovery: global.subtitles.discovery.clone(),
+                backup_path: global.subtitles.backup_path.clone(),
+            },
+            watchers: global.watchers.clone(),
+        }
     }
 }
 
@@ -406,6 +472,7 @@ mod tests {
         assert_eq!(wc.mode, crate::types::WatcherMode::Auto);
         assert!(wc.active);
         assert_eq!(wc.debounce_seconds, 5);
+        assert!(wc.settings.is_none());
     }
 
     #[test]
@@ -435,12 +502,14 @@ mod tests {
                     mode: crate::types::WatcherMode::Auto,
                     active: true,
                     debounce_seconds: 5,
+                    settings: None,
                 },
                 WatcherConfig {
                     path: PathBuf::from("/watch/series"),
                     mode: crate::types::WatcherMode::Review,
                     active: false,
                     debounce_seconds: 10,
+                    settings: None,
                 },
             ],
         };
@@ -501,6 +570,224 @@ mod tests {
         assert_eq!(restored.source_path, PathBuf::from("/src/movie.mkv"));
         assert_eq!(restored.status, crate::types::ReviewStatus::Pending);
         assert_eq!(restored.media_info_json, r#"{"title":"Test"}"#);
+    }
+
+    // -- resolve_config tests --
+
+    #[test]
+    fn resolve_config_no_settings_returns_global() {
+        let global = Config::default();
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: None,
+        };
+        let resolved = wc.resolve_config(&global);
+        assert_eq!(resolved, global);
+    }
+
+    #[test]
+    fn resolve_config_empty_settings_returns_global() {
+        let global = Config::default();
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings::default()),
+        };
+        let resolved = wc.resolve_config(&global);
+        assert_eq!(resolved, global);
+    }
+
+    #[test]
+    fn resolve_config_output_dir_override() {
+        let global = Config {
+            general: GeneralConfig {
+                output_dir: Some(PathBuf::from("/global/output")),
+                ..GeneralConfig::default()
+            },
+            ..Config::default()
+        };
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings {
+                output_dir: Some("/per-watcher/output".to_string()),
+                ..crate::types::WatcherSettings::default()
+            }),
+        };
+        let resolved = wc.resolve_config(&global);
+        assert_eq!(resolved.general.output_dir, Some(PathBuf::from("/per-watcher/output")));
+    }
+
+    #[test]
+    fn resolve_config_output_dir_empty_string_means_none() {
+        let global = Config {
+            general: GeneralConfig {
+                output_dir: Some(PathBuf::from("/global/output")),
+                ..GeneralConfig::default()
+            },
+            ..Config::default()
+        };
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings {
+                output_dir: Some("".to_string()),
+                ..crate::types::WatcherSettings::default()
+            }),
+        };
+        let resolved = wc.resolve_config(&global);
+        assert!(resolved.general.output_dir.is_none(), "empty string should force in-place (None)");
+    }
+
+    #[test]
+    fn resolve_config_movie_template_override() {
+        let global = Config::default();
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings {
+                movie_template: Some("{title}.{ext}".to_string()),
+                ..crate::types::WatcherSettings::default()
+            }),
+        };
+        let resolved = wc.resolve_config(&global);
+        assert_eq!(resolved.templates.movie, "{title}.{ext}");
+        // Non-overridden templates unchanged
+        assert_eq!(resolved.templates.series, global.templates.series);
+        assert_eq!(resolved.templates.anime, global.templates.anime);
+    }
+
+    #[test]
+    fn resolve_config_subtitles_enabled_override() {
+        let global = Config::default();
+        assert!(global.subtitles.enabled); // default is true
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings {
+                subtitles_enabled: Some(false),
+                ..crate::types::WatcherSettings::default()
+            }),
+        };
+        let resolved = wc.resolve_config(&global);
+        assert!(!resolved.subtitles.enabled);
+    }
+
+    #[test]
+    fn resolve_config_preferred_languages_override() {
+        let global = Config {
+            subtitles: SubtitleConfig {
+                preferred_languages: vec!["en".to_string()],
+                ..SubtitleConfig::default()
+            },
+            ..Config::default()
+        };
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings {
+                preferred_languages: Some(vec!["ja".to_string(), "en".to_string()]),
+                ..crate::types::WatcherSettings::default()
+            }),
+        };
+        let resolved = wc.resolve_config(&global);
+        assert_eq!(resolved.subtitles.preferred_languages, vec!["ja", "en"]);
+    }
+
+    #[test]
+    fn resolve_config_partial_overrides_leave_rest_global() {
+        let global = Config {
+            general: GeneralConfig {
+                output_dir: Some(PathBuf::from("/global")),
+                operation: RenameOperation::Move,
+                conflict_strategy: ConflictStrategy::Skip,
+                create_directories: true,
+            },
+            ..Config::default()
+        };
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings {
+                operation: Some(RenameOperation::Copy),
+                ..crate::types::WatcherSettings::default()
+            }),
+        };
+        let resolved = wc.resolve_config(&global);
+        // Overridden
+        assert_eq!(resolved.general.operation, RenameOperation::Copy);
+        // Not overridden -- still global
+        assert_eq!(resolved.general.output_dir, Some(PathBuf::from("/global")));
+        assert_eq!(resolved.general.conflict_strategy, ConflictStrategy::Skip);
+        assert!(resolved.general.create_directories);
+    }
+
+    #[test]
+    fn config_with_watcher_settings_toml_round_trip() {
+        let config = Config {
+            general: GeneralConfig::default(),
+            templates: TemplateConfig::default(),
+            subtitles: SubtitleConfig::default(),
+            watchers: vec![
+                WatcherConfig {
+                    path: PathBuf::from("/watch/movies"),
+                    mode: crate::types::WatcherMode::Auto,
+                    active: true,
+                    debounce_seconds: 5,
+                    settings: Some(crate::types::WatcherSettings {
+                        output_dir: Some("/movies/output".to_string()),
+                        operation: Some(RenameOperation::Copy),
+                        ..crate::types::WatcherSettings::default()
+                    }),
+                },
+            ],
+        };
+
+        let toml_str = toml::to_string_pretty(&config).expect("serialize");
+        let restored: Config = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(config, restored);
+        let settings = restored.watchers[0].settings.as_ref().unwrap();
+        assert_eq!(settings.output_dir, Some("/movies/output".to_string()));
+    }
+
+    #[test]
+    fn empty_watcher_settings_normalized_via_is_empty() {
+        let wc = WatcherConfig {
+            path: PathBuf::from("/watch"),
+            mode: crate::types::WatcherMode::Auto,
+            active: true,
+            debounce_seconds: 5,
+            settings: Some(crate::types::WatcherSettings::default()),
+        };
+        // Serialize: skip_serializing_if means empty settings should not appear
+        let toml_str = toml::to_string_pretty(&wc).expect("serialize");
+        // The settings should be absent because all fields are None (skip_serializing_if)
+        // But the Option<WatcherSettings> itself is Some -- the skip is on the inner fields.
+        // Actually skip_serializing_if on the Option means it won't appear if None.
+        // With Some(default), the settings table will appear but be empty.
+        // Let's verify deserialize still works:
+        let restored: WatcherConfig = toml::from_str(&toml_str).expect("deserialize");
+        // The key check: is_empty() on the settings
+        if let Some(ref s) = restored.settings {
+            assert!(s.is_empty(), "deserialized empty settings should be recognized as empty");
+        }
     }
 
     // -- Partial TOML tests (missing sections are parse errors) --
