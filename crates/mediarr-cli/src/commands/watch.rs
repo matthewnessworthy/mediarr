@@ -29,7 +29,7 @@ pub async fn execute(args: WatchArgs) -> anyhow::Result<()> {
     let db = HistoryDb::open(&data_path)?;
 
     // Create watcher manager
-    let watcher = WatcherManager::new(config, db);
+    let mut watcher = WatcherManager::new(config, db);
 
     // Create shutdown channel -- Ctrl+C will set this to true
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);

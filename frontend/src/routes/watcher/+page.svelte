@@ -39,12 +39,14 @@
 		try {
 			watcherState.watchers = await invoke<WatcherConfig[]>('list_watchers');
 			watcherState.events = await invoke<WatcherEvent[]>('list_watcher_events', {
-				watchPath: null,
+				watch_path: null,
 				limit: 50,
 			});
 			watcherState.reviewQueue = await invoke<ReviewQueueEntry[]>('list_review_queue', {
-				watchPath: null,
+				watch_path: null,
 			});
+		} catch (e) {
+			console.error('Failed to load watcher data:', e);
 		} finally {
 			watcherState.loading = false;
 		}
@@ -52,7 +54,7 @@
 
 	async function refreshReviewQueue() {
 		watcherState.reviewQueue = await invoke<ReviewQueueEntry[]>('list_review_queue', {
-			watchPath: null,
+			watch_path: null,
 		});
 	}
 
@@ -79,9 +81,7 @@
 	}
 
 	onMount(async () => {
-		await loadWatchers();
-
-		// Listen for real-time watcher events per D-09
+		// Set up event listeners first — these must work even if data loading fails
 		unlisten = await listen<WatcherEvent>('watcher-event', (event) => {
 			watcherState.events = [event.payload, ...watcherState.events].slice(0, 100);
 			// Refresh review queue when new items are queued
@@ -90,7 +90,6 @@
 			}
 		});
 
-		// Listen for drag-and-drop to add watched folders
 		unlistenDrag = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
 			dragOver = false;
 			const paths = event.payload.paths;
@@ -105,6 +104,9 @@
 				}
 			}
 		});
+
+		// Load data after listeners are ready
+		await loadWatchers();
 	});
 
 	onDestroy(() => {

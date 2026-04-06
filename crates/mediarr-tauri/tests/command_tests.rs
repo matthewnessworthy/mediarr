@@ -489,3 +489,384 @@ fn list_watchers_returns_configured() {
     assert_eq!(config.watchers[0].mode, mediarr_core::WatcherMode::Auto);
     assert!(config.watchers[0].active);
 }
+
+// ---------------------------------------------------------------------------
+// Watcher E2E tests (mirror the full Tauri command flow)
+// ---------------------------------------------------------------------------
+
+/// Simulate the start_watcher Tauri command flow:
+/// spawn a watcher thread, wait for init signal, drop a file, verify processing.
+#[test]
+fn watcher_e2e_auto_mode_start_process_stop() {
+    use std::sync::Arc;
+
+    let watch_dir = TempDir::new().unwrap();
+    let output_dir = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("e2e.db");
+
+    let mut config = config_with_output(output_dir.path());
+    config.watchers.push(mediarr_core::WatcherConfig {
+        path: watch_dir.path().to_path_buf(),
+        mode: mediarr_core::WatcherMode::Auto,
+        active: false,
+        debounce_seconds: 1,
+    });
+
+    // -- Simulate start_watcher command --
+
+    let watcher_config = config
+        .watchers
+        .iter()
+        .find(|w| w.path == watch_dir.path())
+        .cloned()
+        .expect("watcher config should exist");
+
+    let all_events = Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
+    let all_events_clone = all_events.clone();
+
+    let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
+        Box::new(move |event: &mediarr_core::WatcherEvent| {
+            let action = event.action.to_string();
+            let detail = event.detail.clone().unwrap_or_default();
+            eprintln!("[watcher-event] action={action} detail={detail}");
+            all_events_clone.lock().unwrap().push((action, detail));
+        });
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+
+    let config_clone = config.clone();
+    let db_path_clone = db_path.clone();
+    let watch_path = watcher_config.path.clone();
+    let mode = watcher_config.mode;
+    let debounce = watcher_config.debounce_seconds;
+
+    // Spawn watcher thread (same pattern as Tauri start_watcher command)
+    let watch_path_thread = watch_path.clone();
+    let thread_handle = std::thread::Builder::new()
+        .name("test-watcher-e2e".to_string())
+        .spawn(move || {
+            let db = mediarr_core::HistoryDb::open(&db_path_clone)
+                .expect("open history db");
+            let mut watcher = mediarr_core::WatcherManager::new(config_clone, db);
+            watcher.set_on_event(on_event_callback);
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build tokio runtime");
+
+            if let Err(e) = rt.block_on(watcher.run_with_init_signal(
+                &watch_path_thread,
+                mode,
+                debounce,
+                shutdown_rx,
+                init_tx,
+            )) {
+                eprintln!("watcher exited with error: {e}");
+            }
+        })
+        .expect("spawn watcher thread");
+
+    // Wait for init signal (same as Tauri command)
+    let init_result = init_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("should receive init signal");
+    assert!(
+        init_result.is_ok(),
+        "watcher should initialize successfully: {:?}",
+        init_result
+    );
+
+    // -- Simulate user dropping a file --
+    let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+    fs::write(&video, b"video data").unwrap();
+
+    // Wait for debounce (1s) + processing
+    std::thread::sleep(std::time::Duration::from_secs(4));
+
+    // -- Simulate stop_watcher command --
+    let _ = shutdown_tx.send(true);
+    thread_handle.join().expect("watcher thread should not panic");
+
+    // -- Verify results --
+    let events = all_events.lock().unwrap().clone();
+    eprintln!("[test] all events: {events:?}");
+    assert!(!events.is_empty(), "expected at least 1 watcher event");
+
+    // At least one event should be 'renamed'
+    let has_renamed = events.iter().any(|(a, _)| a == "renamed");
+    assert!(
+        has_renamed,
+        "expected at least one 'renamed' event, got: {events:?}"
+    );
+
+    // Source file should be moved
+    assert!(!video.exists(), "source file should have been moved");
+
+    // Verify events in database (same as list_watcher_events command)
+    let db = mediarr_core::HistoryDb::open(&db_path).expect("open history db");
+    let events = db
+        .list_watcher_events(Some(watch_dir.path()), None)
+        .expect("list events");
+    assert!(!events.is_empty(), "should have logged events to database");
+    assert_eq!(
+        events[0].action,
+        mediarr_core::WatcherAction::Renamed,
+        "first event should be 'renamed'"
+    );
+
+    // Verify history batch was recorded
+    let batches = db.list_batches(None).expect("list batches");
+    assert!(!batches.is_empty(), "should have recorded a history batch");
+}
+
+/// Simulate the review mode watcher flow + approve command.
+#[test]
+fn watcher_e2e_review_mode_queue_and_approve() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let watch_dir = TempDir::new().unwrap();
+    let output_dir = TempDir::new().unwrap();
+    let db_dir = TempDir::new().unwrap();
+    let db_path = db_dir.path().join("e2e-review.db");
+
+    let mut config = config_with_output(output_dir.path());
+    config.watchers.push(mediarr_core::WatcherConfig {
+        path: watch_dir.path().to_path_buf(),
+        mode: mediarr_core::WatcherMode::Review,
+        active: false,
+        debounce_seconds: 1,
+    });
+
+    let event_count = Arc::new(AtomicUsize::new(0));
+    let event_count_clone = event_count.clone();
+
+    let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
+        Box::new(move |_event| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+
+    let config_clone = config.clone();
+    let db_path_clone = db_path.clone();
+    let watch_path = watch_dir.path().to_path_buf();
+
+    let watch_path_thread = watch_path.clone();
+    let thread_handle = std::thread::Builder::new()
+        .name("test-watcher-review".to_string())
+        .spawn(move || {
+            let db = mediarr_core::HistoryDb::open(&db_path_clone).expect("open db");
+            let mut watcher = mediarr_core::WatcherManager::new(config_clone, db);
+            watcher.set_on_event(on_event_callback);
+
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build runtime");
+
+            let _ = rt.block_on(watcher.run_with_init_signal(
+                &watch_path_thread,
+                mediarr_core::WatcherMode::Review,
+                1,
+                shutdown_rx,
+                init_tx,
+            ));
+        })
+        .expect("spawn thread");
+
+    let init_result = init_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("should receive init signal");
+    assert!(init_result.is_ok(), "init should succeed: {:?}", init_result);
+
+    // Drop a video file
+    let video = watch_path.join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
+    fs::write(&video, b"series data").unwrap();
+
+    // Wait for debounce + processing
+    std::thread::sleep(std::time::Duration::from_secs(4));
+
+    // Stop watcher
+    let _ = shutdown_tx.send(true);
+    thread_handle.join().expect("thread should not panic");
+
+    // -- Verify review queue (mirrors list_review_queue command) --
+    let db = mediarr_core::HistoryDb::open(&db_path).expect("open db");
+    let queue = db
+        .list_review_queue(Some(watch_dir.path()), Some(mediarr_core::ReviewStatus::Pending))
+        .expect("list review queue");
+    assert!(!queue.is_empty(), "review queue should have at least 1 entry");
+
+    let entry = &queue[0];
+    assert!(entry.id.is_some(), "entry should have an id");
+    assert!(
+        entry.source_path.exists(),
+        "source file should still exist (review mode doesn't rename)"
+    );
+
+    // -- Simulate approve_review_entry command --
+    let entry_id = entry.id.unwrap();
+
+    // Parse subtitle entries from JSON (same as approve command)
+    let mut plan_entries = vec![mediarr_core::RenamePlanEntry {
+        source_path: entry.source_path.clone(),
+        dest_path: entry.proposed_path.clone(),
+    }];
+
+    if let Ok(subtitles) =
+        serde_json::from_str::<Vec<mediarr_core::SubtitleMatch>>(&entry.subtitles_json)
+    {
+        for sub in &subtitles {
+            plan_entries.push(mediarr_core::RenamePlanEntry {
+                source_path: sub.source_path.clone(),
+                dest_path: sub.proposed_path.clone(),
+            });
+        }
+    }
+
+    let plan = mediarr_core::RenamePlan {
+        entries: plan_entries,
+    };
+
+    let renamer = mediarr_core::Renamer::from_config(&config.general);
+    let results = renamer.execute(&plan);
+    assert!(
+        results.iter().all(|r| r.success),
+        "all renames should succeed: {:?}",
+        results
+    );
+
+    // Record history batch
+    let batch_id = mediarr_core::HistoryDb::generate_batch_id();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let media_info: mediarr_core::MediaInfo =
+        serde_json::from_str(&entry.media_info_json)
+            .expect("media_info_json should deserialize");
+
+    let records: Vec<mediarr_core::RenameRecord> = results
+        .iter()
+        .filter(|r| r.success)
+        .map(|r| {
+            let file_size = fs::metadata(&r.dest_path).map(|m| m.len()).unwrap_or(0);
+            mediarr_core::RenameRecord {
+                batch_id: batch_id.clone(),
+                timestamp: timestamp.clone(),
+                source_path: r.source_path.clone(),
+                dest_path: r.dest_path.clone(),
+                media_info: media_info.clone(),
+                file_size,
+                file_mtime: String::new(),
+            }
+        })
+        .collect();
+
+    db.record_batch(&records).expect("record batch");
+    db.update_review_status(entry_id, mediarr_core::ReviewStatus::Approved)
+        .expect("update review status");
+
+    // Verify: source gone, dest exists, status updated
+    assert!(!video.exists(), "source should be moved after approve");
+
+    let updated_queue = db
+        .list_review_queue(Some(watch_dir.path()), Some(mediarr_core::ReviewStatus::Pending))
+        .expect("list queue");
+    assert!(
+        updated_queue.is_empty(),
+        "pending queue should be empty after approve"
+    );
+
+    let batches = db.list_batches(None).expect("list batches");
+    assert!(!batches.is_empty(), "history should have a batch");
+}
+
+/// Test watcher events are correctly serialized for Tauri IPC.
+/// Verifies the serde round-trip that happens when events go through
+/// app.emit() -> frontend listen().
+#[test]
+fn watcher_event_serializes_for_tauri_ipc() {
+    let event = mediarr_core::WatcherEvent {
+        id: Some(42),
+        timestamp: "2026-04-06T12:00:00Z".to_string(),
+        watch_path: PathBuf::from("/Users/test/media"),
+        filename: "Inception.2010.mkv".to_string(),
+        action: mediarr_core::WatcherAction::Renamed,
+        detail: Some("/Users/test/output/Inception (2010)/Inception.mkv".to_string()),
+        batch_id: Some("batch-123".to_string()),
+    };
+
+    // Serialize (what Tauri app.emit does)
+    let json = serde_json::to_string(&event).expect("should serialize");
+
+    // Verify JSON structure matches TypeScript interface expectations
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    assert_eq!(parsed["id"], 42);
+    assert_eq!(parsed["timestamp"], "2026-04-06T12:00:00Z");
+    assert_eq!(parsed["watch_path"], "/Users/test/media");
+    assert_eq!(parsed["filename"], "Inception.2010.mkv");
+    assert_eq!(parsed["action"], "renamed");
+    assert_eq!(
+        parsed["detail"],
+        "/Users/test/output/Inception (2010)/Inception.mkv"
+    );
+    assert_eq!(parsed["batch_id"], "batch-123");
+
+    // Deserialize back (proves round-trip)
+    let restored: mediarr_core::WatcherEvent =
+        serde_json::from_str(&json).expect("should deserialize");
+    assert_eq!(restored.filename, "Inception.2010.mkv");
+    assert_eq!(restored.action, mediarr_core::WatcherAction::Renamed);
+}
+
+/// Test ReviewQueueEntry serializes correctly for frontend IPC.
+#[test]
+fn review_queue_entry_serializes_for_tauri_ipc() {
+    let entry = mediarr_core::ReviewQueueEntry {
+        id: Some(1),
+        timestamp: "2026-04-06T12:00:00Z".to_string(),
+        watch_path: PathBuf::from("/Users/test/media"),
+        source_path: PathBuf::from("/Users/test/media/Movie.2024.mkv"),
+        proposed_path: PathBuf::from("/Users/test/output/Movie (2024)/Movie.mkv"),
+        media_info_json: r#"{"title":"Movie","media_type":"Movie"}"#.to_string(),
+        subtitles_json: "[]".to_string(),
+        status: mediarr_core::ReviewStatus::Pending,
+    };
+
+    let json = serde_json::to_string(&entry).expect("should serialize");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+
+    // Verify field names match TypeScript interface (snake_case, not camelCase)
+    assert!(parsed.get("id").is_some());
+    assert!(parsed.get("timestamp").is_some());
+    assert!(parsed.get("watch_path").is_some());
+    assert!(parsed.get("source_path").is_some());
+    assert!(parsed.get("proposed_path").is_some());
+    assert!(parsed.get("media_info_json").is_some());
+    assert!(parsed.get("subtitles_json").is_some());
+    assert!(parsed.get("status").is_some());
+    assert_eq!(parsed["status"], "pending");
+}
+
+/// Test WatcherConfig serializes correctly for frontend IPC.
+#[test]
+fn watcher_config_serializes_for_tauri_ipc() {
+    let wc = mediarr_core::WatcherConfig {
+        path: PathBuf::from("/Users/test/downloads"),
+        mode: mediarr_core::WatcherMode::Review,
+        active: true,
+        debounce_seconds: 10,
+    };
+
+    let json = serde_json::to_string(&wc).expect("should serialize");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+
+    // Frontend expects these exact field names
+    assert_eq!(parsed["path"], "/Users/test/downloads");
+    assert_eq!(parsed["mode"], "review");
+    assert_eq!(parsed["active"], true);
+    assert_eq!(parsed["debounce_seconds"], 10);
+}

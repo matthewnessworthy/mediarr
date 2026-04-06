@@ -5,8 +5,9 @@
 //! Uses a channel bridge pattern to connect notify's sync callbacks to
 //! tokio's async runtime.
 
-use std::path::Path;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use notify::RecursiveMode;
 use notify_debouncer_full::new_debouncer;
@@ -23,6 +24,10 @@ use crate::types::{
 
 /// Default maximum activity events kept per watch path (per D-07).
 const DEFAULT_MAX_EVENTS: usize = 500;
+
+/// How long a processed path stays in the deduplication cache.
+/// Events for the same canonical path within this window are ignored.
+const DEDUP_WINDOW: Duration = Duration::from_secs(30);
 
 /// Video file extensions recognised by the watcher.
 const VIDEO_EXTENSIONS: &[&str] = &[
@@ -53,6 +58,11 @@ pub struct WatcherManager {
     history: HistoryDb,
     max_activity_events: usize,
     on_event: Option<EventCallback>,
+    /// Recently-processed paths — prevents duplicate processing when the OS
+    /// fires multiple filesystem events for a single logical file arrival.
+    /// Maps canonical path -> time it was processed. Entries older than
+    /// `DEDUP_WINDOW` are pruned on each event batch.
+    recently_processed: HashMap<PathBuf, Instant>,
 }
 
 impl WatcherManager {
@@ -67,6 +77,7 @@ impl WatcherManager {
             history,
             max_activity_events: DEFAULT_MAX_EVENTS,
             on_event: None,
+            recently_processed: HashMap::new(),
         }
     }
 
@@ -96,7 +107,7 @@ impl WatcherManager {
     /// * `debounce_seconds` - Debounce duration for filesystem events
     /// * `shutdown` - Watch receiver; when true, the loop exits
     pub async fn run(
-        &self,
+        &mut self,
         watch_path: &Path,
         mode: WatcherMode,
         debounce_seconds: u64,
@@ -112,7 +123,7 @@ impl WatcherManager {
     /// a Tauri command) detect and report early failures rather than having
     /// the thread die silently.
     pub async fn run_with_init_signal(
-        &self,
+        &mut self,
         watch_path: &Path,
         mode: WatcherMode,
         debounce_seconds: u64,
@@ -125,7 +136,7 @@ impl WatcherManager {
 
     /// Internal implementation shared by [`run`] and [`run_with_init_signal`].
     async fn run_inner(
-        &self,
+        &mut self,
         watch_path: &Path,
         mode: WatcherMode,
         debounce_seconds: u64,
@@ -243,13 +254,18 @@ impl WatcherManager {
     /// - `Modify(Name(RenameMode::Any))` — unmatched rename on macOS FSEvents;
     ///   the debouncer stores these only when the path exists (i.e. "move in")
     fn process_debounced_events(
-        &self,
+        &mut self,
         events: &[notify_debouncer_full::DebouncedEvent],
         watch_path: &Path,
         mode: WatcherMode,
     ) {
         use notify::event::{ModifyKind, RenameMode};
         use notify::EventKind;
+
+        // Prune expired entries from the deduplication cache.
+        let now = Instant::now();
+        self.recently_processed
+            .retain(|_, processed_at| now.duration_since(*processed_at) < DEDUP_WINDOW);
 
         for event in events {
             // Determine which path to process based on event kind.
@@ -280,6 +296,29 @@ impl WatcherManager {
                     continue;
                 }
 
+                // Canonicalize the path for deduplication. On macOS, notify
+                // resolves symlinks (e.g. /var -> /private/var) so the event
+                // path may differ from what the user originally provided.
+                // Fall back to the raw path if canonicalization fails (e.g.
+                // the file was already moved by a prior event in this batch).
+                let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+
+                if self.recently_processed.contains_key(&canonical) {
+                    debug!(path = %path.display(), "skipping recently-processed file (dedup)");
+                    continue;
+                }
+
+                // Also skip if the file no longer exists — it was likely
+                // already processed and moved by a prior event.
+                if !path.exists() {
+                    debug!(path = %path.display(), "skipping non-existent file (already moved)");
+                    continue;
+                }
+
+                // Mark as processed BEFORE processing, so concurrent events
+                // for the same path in this batch are also skipped.
+                self.recently_processed.insert(canonical, now);
+
                 if let Err(e) = self.process_single_file(path, watch_path, mode) {
                     warn!(
                         path = %path.display(),
@@ -297,7 +336,7 @@ impl WatcherManager {
     /// In review mode: scan, queue for review, log event.
     /// Errors are logged as watcher events rather than propagated (the
     /// watcher loop must not crash on individual file failures).
-    fn process_single_file(&self, path: &Path, watch_path: &Path, mode: WatcherMode) -> Result<()> {
+    fn process_single_file(&mut self, path: &Path, watch_path: &Path, mode: WatcherMode) -> Result<()> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let filename = path
             .file_name()
@@ -352,6 +391,18 @@ impl WatcherManager {
                 let all_success = results.iter().all(|r| r.success);
 
                 if all_success {
+                    // Add all destination paths to the dedup cache so the
+                    // watcher doesn't re-process its own output when watching
+                    // recursively and output lands inside the watched folder.
+                    let now = Instant::now();
+                    for r in &results {
+                        if r.success {
+                            let canonical = r.dest_path.canonicalize()
+                                .unwrap_or_else(|_| r.dest_path.clone());
+                            self.recently_processed.insert(canonical, now);
+                        }
+                    }
+
                     // Record batch in history
                     let batch_id = HistoryDb::generate_batch_id();
 
@@ -504,7 +555,7 @@ mod tests {
         let output = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
 
-        let watcher = setup_watcher(output.path(), &db_path);
+        let mut watcher = setup_watcher(output.path(), &db_path);
         assert_eq!(watcher.max_activity_events, DEFAULT_MAX_EVENTS);
     }
 
@@ -524,7 +575,7 @@ mod tests {
             .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
-        let watcher = setup_watcher(output.path(), &db_path);
+        let mut watcher = setup_watcher(output.path(), &db_path);
         let result = watcher.process_single_file(&video, source.path(), WatcherMode::Auto);
         assert!(
             result.is_ok(),
@@ -560,7 +611,7 @@ mod tests {
             .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
-        let watcher = setup_watcher(output.path(), &db_path);
+        let mut watcher = setup_watcher(output.path(), &db_path);
         let result = watcher.process_single_file(&video, source.path(), WatcherMode::Review);
         assert!(
             result.is_ok(),
@@ -604,7 +655,7 @@ mod tests {
         let txt_file = source.path().join("readme.txt");
         fs::write(&txt_file, b"text content").unwrap();
 
-        let watcher = setup_watcher(output.path(), &db_path);
+        let mut watcher = setup_watcher(output.path(), &db_path);
         // scan_file will reject non-video files, so this logs an error event
         let result = watcher.process_single_file(&txt_file, source.path(), WatcherMode::Auto);
         // Should not crash
@@ -630,7 +681,7 @@ mod tests {
             .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
         fs::write(&video, b"series data").unwrap();
 
-        let watcher = setup_watcher(output.path(), &db_path);
+        let mut watcher = setup_watcher(output.path(), &db_path);
         watcher
             .process_single_file(&video, source.path(), WatcherMode::Auto)
             .unwrap();
@@ -656,7 +707,7 @@ mod tests {
             .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
         fs::write(&video, b"series data").unwrap();
 
-        let watcher = setup_watcher(output.path(), &db_path);
+        let mut watcher = setup_watcher(output.path(), &db_path);
         watcher
             .process_single_file(&video, source.path(), WatcherMode::Review)
             .unwrap();
@@ -1260,7 +1311,7 @@ mod tests {
 
         let config = test_config(output.path());
         let history = HistoryDb::open(&db_path).unwrap();
-        let watcher = WatcherManager::new(config, history);
+        let mut watcher = WatcherManager::new(config, history);
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
@@ -1305,7 +1356,7 @@ mod tests {
 
         let config = test_config(output.path());
         let history = HistoryDb::open(&db_path).unwrap();
-        let watcher = WatcherManager::new(config, history);
+        let mut watcher = WatcherManager::new(config, history);
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
@@ -1356,7 +1407,7 @@ mod tests {
 
         let config = test_config(output.path());
         let history = HistoryDb::open(&db_path).unwrap();
-        let watcher = WatcherManager::new(config, history);
+        let mut watcher = WatcherManager::new(config, history);
 
         let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
