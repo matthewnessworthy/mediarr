@@ -16,6 +16,17 @@ describe('ScanState', () => {
 		expect(scanState.filteredResults).toHaveLength(2);
 	});
 
+	it('filteredResults sorts alphabetically by source filename', () => {
+		scanState.results = [
+			mockScanResult({ source_path: '/folder/Zeta.mkv' }),
+			mockScanResult({ source_path: '/folder/alpha.mkv' }),
+			mockScanResult({ source_path: '/other/middle.mkv' }),
+		];
+		flushSync();
+		const names = scanState.filteredResults.map((r) => r.source_path);
+		expect(names).toEqual(['/folder/alpha.mkv', '/other/middle.mkv', '/folder/Zeta.mkv']);
+	});
+
 	it('filteredResults filters by media_type', () => {
 		scanState.results = [
 			mockScanResult({
@@ -349,6 +360,77 @@ describe('ScanState', () => {
 			const groups = scanState.conflictGroups;
 			expect(groups.size).toBe(1);
 			expect(groups.get('/out/same.mkv')).toEqual(['/dup-a.mkv', '/dup-b.mkv']);
+		});
+
+		it('filteredResults sorts conflict items before non-conflict items', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/ok-a.mkv', status: 'Ok', proposed_path: '/out/a.mkv' }),
+				mockScanResult({ source_path: '/dup-a.mkv', status: 'Conflict', proposed_path: '/out/same.mkv' }),
+				mockScanResult({ source_path: '/ok-b.mkv', status: 'Ok', proposed_path: '/out/b.mkv' }),
+				mockScanResult({ source_path: '/dup-b.mkv', status: 'Conflict', proposed_path: '/out/same.mkv' }),
+			];
+			flushSync();
+
+			const paths = scanState.filteredResults.map((r) => r.source_path);
+			// Conflict items should come first, grouped together
+			expect(paths[0]).toBe('/dup-a.mkv');
+			expect(paths[1]).toBe('/dup-b.mkv');
+			// Non-conflict items follow
+			expect(paths[2]).toBe('/ok-a.mkv');
+			expect(paths[3]).toBe('/ok-b.mkv');
+		});
+
+		it('filteredResults groups conflict items by proposed_path', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/g2-b.mkv', status: 'Conflict', proposed_path: '/out/dest2.mkv' }),
+				mockScanResult({ source_path: '/g1-a.mkv', status: 'Conflict', proposed_path: '/out/dest1.mkv' }),
+				mockScanResult({ source_path: '/g2-a.mkv', status: 'Conflict', proposed_path: '/out/dest2.mkv' }),
+				mockScanResult({ source_path: '/g1-b.mkv', status: 'Conflict', proposed_path: '/out/dest1.mkv' }),
+			];
+			flushSync();
+
+			const results = scanState.filteredResults;
+			// Group 1 (dest1) members should be adjacent
+			expect(results[0].proposed_path).toBe('/out/dest1.mkv');
+			expect(results[1].proposed_path).toBe('/out/dest1.mkv');
+			// Group 2 (dest2) members should be adjacent
+			expect(results[2].proposed_path).toBe('/out/dest2.mkv');
+			expect(results[3].proposed_path).toBe('/out/dest2.mkv');
+		});
+
+		it('counts includes conflict count', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/ok.mkv', status: 'Ok', proposed_path: '/out/ok.mkv' }),
+				mockScanResult({ source_path: '/dup-a.mkv', status: 'Conflict', proposed_path: '/out/same.mkv' }),
+				mockScanResult({ source_path: '/dup-b.mkv', status: 'Conflict', proposed_path: '/out/same.mkv' }),
+			];
+			flushSync();
+			expect(scanState.counts.conflicts).toBe(2);
+		});
+
+		it('getConflictGroupInfo returns null for non-conflict results', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/ok.mkv', status: 'Ok', proposed_path: '/out/ok.mkv' }),
+			];
+			flushSync();
+			expect(scanState.getConflictGroupInfo(scanState.results[0])).toBeNull();
+		});
+
+		it('getConflictGroupInfo returns group index and size for conflict results', () => {
+			scanState.results = [
+				mockScanResult({ source_path: '/g1-a.mkv', status: 'Conflict', proposed_path: '/out/dest1.mkv' }),
+				mockScanResult({ source_path: '/g1-b.mkv', status: 'Conflict', proposed_path: '/out/dest1.mkv' }),
+				mockScanResult({ source_path: '/g2-a.mkv', status: 'Conflict', proposed_path: '/out/dest2.mkv' }),
+				mockScanResult({ source_path: '/g2-b.mkv', status: 'Conflict', proposed_path: '/out/dest2.mkv' }),
+				mockScanResult({ source_path: '/g2-c.mkv', status: 'Conflict', proposed_path: '/out/dest2.mkv' }),
+			];
+			flushSync();
+
+			const g1Info = scanState.getConflictGroupInfo(scanState.results[0]);
+			expect(g1Info).toEqual({ groupIndex: 1, groupSize: 2 });
+
+			const g2Info = scanState.getConflictGroupInfo(scanState.results[2]);
+			expect(g2Info).toEqual({ groupIndex: 2, groupSize: 3 });
 		});
 	});
 

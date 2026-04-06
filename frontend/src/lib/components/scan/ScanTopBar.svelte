@@ -47,6 +47,23 @@
 					</button>
 				</span>
 			{/each}
+			{#each scanState.filePaths as path}
+				<span
+					class="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-0.5 text-xs font-mono text-muted-foreground max-w-48 truncate"
+					title={path}
+				>
+					{path.split('/').pop() || path}
+					<button
+						type="button"
+						class="ml-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+						style="transition-duration: var(--duration-fast);"
+						aria-label="Remove file {path.split('/').pop() || path}"
+						onclick={(e) => { e.stopPropagation(); scanState.removeFile(path); }}
+					>
+						<X class="size-3" />
+					</button>
+				</span>
+			{/each}
 			<span class="text-xs text-muted-foreground/60 shrink-0">
 				{scanState.results.length} file{scanState.results.length !== 1 ? 's' : ''}
 			</span>
@@ -56,6 +73,19 @@
 				</span>
 			{:else if scanState.loading}
 				<span class="text-xs text-muted-foreground/60 shrink-0 animate-pulse">Scanning...</span>
+			{/if}
+
+			<!-- Clear button — before spacer so it stays visible near the file count -->
+			{#if scanState.folderPaths.length > 0 || scanState.filePaths.length > 0 || scanState.results.length > 0}
+				<button
+					type="button"
+					class="text-xs text-muted-foreground/60 hover:text-foreground transition-colors shrink-0 ml-1"
+					style="transition-duration: var(--duration-fast);"
+					onclick={() => { scanState.reset(); }}
+					aria-label="Clear scan results"
+				>
+					<X class="size-3.5" />
+				</button>
 			{/if}
 		</div>
 
@@ -72,18 +102,6 @@
 				bind:value={scanState.searchQuery}
 			/>
 		</div>
-
-		<!-- Clear button -->
-		{#if scanState.folderPaths.length > 0}
-			<button
-				type="button"
-				class="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
-				style="transition-duration: var(--duration-fast);"
-				onclick={() => { scanState.reset(); }}
-			>
-				Clear
-			</button>
-		{/if}
 
 		<!-- Folder selector (compact mode) -->
 		<FolderSelector {onSelect} compact />

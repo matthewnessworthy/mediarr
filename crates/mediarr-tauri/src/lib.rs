@@ -60,6 +60,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::scan::scan_folder,
             commands::scan::scan_folder_streaming,
+            commands::scan::scan_files,
             commands::rename::dry_run_renames,
             commands::rename::execute_renames,
             commands::history::list_batches,

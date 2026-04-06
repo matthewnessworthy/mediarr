@@ -16,6 +16,7 @@
 		{ label: 'Movies', count: scanState.counts.movies, filterType: 'Movie', filterStatus: null },
 		{ label: 'Anime', count: scanState.counts.anime, filterType: 'Anime', filterStatus: null },
 		{ label: 'Ambiguous', count: scanState.counts.ambiguous, filterType: null, filterStatus: 'Ambiguous' },
+		{ label: 'Conflicts', count: scanState.counts.conflicts, filterType: null, filterStatus: 'Conflict' },
 	]);
 
 	function isActive(tab: FilterItem): boolean {

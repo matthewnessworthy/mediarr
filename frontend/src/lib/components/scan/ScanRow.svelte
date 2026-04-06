@@ -8,7 +8,7 @@
 	import MetadataPills from './MetadataPills.svelte';
 	import SubtitleTree from './SubtitleTree.svelte';
 	import AmbiguityPanel from './AmbiguityPanel.svelte';
-	import { ChevronRight } from '@lucide/svelte';
+	import { ChevronRight, TriangleAlert, Link } from '@lucide/svelte';
 
 	const {
 		result,
@@ -16,15 +16,22 @@
 		onToggleSelect,
 		expanded,
 		onToggleExpand,
+		conflictGroup = null,
+		isFirstInGroup = false,
+		isLastInGroup = false,
 	}: {
 		result: ScanResult;
 		selected: boolean;
 		onToggleSelect: () => void;
 		expanded: boolean;
 		onToggleExpand: () => void;
+		conflictGroup?: { groupIndex: number; groupSize: number } | null;
+		isFirstInGroup?: boolean;
+		isLastInGroup?: boolean;
 	} = $props();
 
 	const isAmbiguous = $derived(result.status === 'Ambiguous');
+	const isConflict = $derived(result.status === 'Conflict');
 
 	const formattedTitle = $derived(() => {
 		const info = result.media_info;
@@ -88,6 +95,8 @@
 	class={cn(
 		'border-b border-border/50',
 		isAmbiguous && 'bg-amber-500/[0.03]',
+		isConflict && 'bg-rose-500/[0.04] border-l-2 border-l-rose-500/40',
+		isConflict && !isLastInGroup && 'border-b-rose-500/20',
 		selected && 'bg-accent/30'
 	)}
 >
@@ -118,7 +127,19 @@
 			/>
 
 			<!-- Media type badge -->
-			{#if isAmbiguous}
+			{#if isConflict}
+				<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-rose-500/15 text-rose-400">
+					<TriangleAlert class="size-3" />
+					Conflict
+				</span>
+				{#if conflictGroup}
+					<span class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-rose-400/70 bg-rose-500/8">
+						<Link class="size-2.5" />
+						{conflictGroup.groupSize}
+					</span>
+				{/if}
+				<MediaBadge mediaType={result.media_info.media_type} />
+			{:else if isAmbiguous}
 				<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-amber-500/15 text-amber-400">
 					Ambiguous
 				</span>
@@ -178,6 +199,15 @@
 					groupId={result.source_path}
 					onResolve={handleResolve}
 				/>
+			{/if}
+
+			<!-- Conflict reason -->
+			{#if isConflict && expanded && result.ambiguity_reason}
+				<div class="px-4 pb-2 pl-7 sm:pl-[4.25rem]">
+					<span class="text-[11px] text-rose-400/80">
+						{result.ambiguity_reason}
+					</span>
+				</div>
 			{/if}
 
 			<!-- Template type indicator -->

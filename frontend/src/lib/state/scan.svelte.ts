@@ -4,6 +4,7 @@ class ScanState {
 	results = $state<ScanResult[]>([]);
 	loading = $state(false);
 	folderPaths = $state<string[]>([]);
+	filePaths = $state<string[]>([]);
 	scanningFolderIndex = $state(-1);
 	filterType = $state<MediaType | null>(null);
 	filterStatus = $state<ScanStatus | null>(null);
@@ -13,14 +14,44 @@ class ScanState {
 	recentPaths = $state<string[]>([]);
 
 	get filteredResults(): ScanResult[] {
-		return this.results.filter((r) => {
-			if (this.filterType && r.media_info.media_type !== this.filterType) return false;
-			if (this.filterStatus && r.status !== this.filterStatus) return false;
-			if (this.searchQuery) {
-				const q = this.searchQuery.toLowerCase();
-				if (!r.media_info.title.toLowerCase().includes(q)) return false;
+		const filtered = this.results
+			.filter((r) => {
+				if (this.filterType && r.media_info.media_type !== this.filterType) return false;
+				if (this.filterStatus && r.status !== this.filterStatus) return false;
+				if (this.searchQuery) {
+					const q = this.searchQuery.toLowerCase();
+					if (!r.media_info.title.toLowerCase().includes(q)) return false;
+				}
+				return true;
+			});
+
+		// Build a conflict group key for each result so members sort adjacent.
+		// Non-conflict items get a high sort key to stay after conflict groups.
+		const conflictGroupKey = new Map<string, string>();
+		for (const r of filtered) {
+			if (r.status === 'Conflict') {
+				conflictGroupKey.set(r.source_path, r.proposed_path);
 			}
-			return true;
+		}
+
+		return filtered.sort((a, b) => {
+			const aConflict = a.status === 'Conflict';
+			const bConflict = b.status === 'Conflict';
+
+			// Conflict items sort before non-conflict items
+			if (aConflict && !bConflict) return -1;
+			if (!aConflict && bConflict) return 1;
+
+			// Within conflict items, group by proposed_path
+			if (aConflict && bConflict) {
+				const groupCmp = a.proposed_path.localeCompare(b.proposed_path);
+				if (groupCmp !== 0) return groupCmp;
+			}
+
+			// Within same group (or both non-conflict), sort by filename
+			const nameA = a.source_path.split(/[\\/]/).pop()?.toLowerCase() ?? a.source_path;
+			const nameB = b.source_path.split(/[\\/]/).pop()?.toLowerCase() ?? b.source_path;
+			return nameA.localeCompare(nameB);
 		});
 	}
 
@@ -34,7 +65,8 @@ class ScanState {
 		const movies = this.results.filter((r) => r.media_info.media_type === 'Movie').length;
 		const anime = this.results.filter((r) => r.media_info.media_type === 'Anime').length;
 		const ambiguous = this.results.filter((r) => r.status === 'Ambiguous').length;
-		return { all, series, movies, anime, ambiguous };
+		const conflicts = this.results.filter((r) => r.status === 'Conflict').length;
+		return { all, series, movies, anime, ambiguous, conflicts };
 	}
 
 	/**
@@ -54,6 +86,27 @@ class ScanState {
 			}
 		}
 		return groups;
+	}
+
+	/**
+	 * Get conflict group info for a result: which group it belongs to (1-based index)
+	 * and how many members are in the group. Returns null if not a conflict.
+	 */
+	getConflictGroupInfo(result: ScanResult): { groupIndex: number; groupSize: number } | null {
+		if (result.status !== 'Conflict') return null;
+		const groups = this.conflictGroups;
+		const siblings = groups.get(result.proposed_path);
+		if (!siblings || siblings.length < 2) return null;
+
+		// Assign a stable 1-based group index from the conflict groups map
+		let groupIndex = 0;
+		for (const [key, members] of groups) {
+			if (members.length >= 2) {
+				groupIndex++;
+				if (key === result.proposed_path) break;
+			}
+		}
+		return { groupIndex, groupSize: siblings.length };
 	}
 
 	/**
@@ -118,6 +171,16 @@ class ScanState {
 		this.folderPaths = this.folderPaths.filter(p => p !== path);
 	}
 
+	addFile(path: string) {
+		if (!this.filePaths.includes(path)) {
+			this.filePaths = [...this.filePaths, path];
+		}
+	}
+
+	removeFile(path: string) {
+		this.filePaths = this.filePaths.filter(p => p !== path);
+	}
+
 	clearAll() {
 		this.reset();
 	}
@@ -126,6 +189,7 @@ class ScanState {
 		this.results = [];
 		this.loading = false;
 		this.folderPaths = [];
+		this.filePaths = [];
 		this.scanningFolderIndex = -1;
 		this.filterType = null;
 		this.filterStatus = null;

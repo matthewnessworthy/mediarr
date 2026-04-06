@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invoke, Channel } from '@tauri-apps/api/core';
-	import type { ScanEvent, RenameResult, MediaInfo } from '$lib/types';
+	import type { ScanResult, ScanEvent, RenameResult, MediaInfo } from '$lib/types';
 	import { scanState } from '$lib/state/scan.svelte.js';
 	import ScanTopBar from '$lib/components/scan/ScanTopBar.svelte';
 	import ScanBottomBar from '$lib/components/scan/ScanBottomBar.svelte';
@@ -16,21 +16,22 @@
 
 	const hasResults = $derived(scanState.results.length > 0);
 	const showMain = $derived(
-		scanState.results.length > 0 || scanState.loading || scanState.folderPaths.length > 0
+		scanState.results.length > 0 || scanState.loading || scanState.folderPaths.length > 0 || scanState.filePaths.length > 0
 	);
 
 	async function startScan(triggerPath?: string) {
 		// If a path was provided (from folder selector), it's already been added to folderPaths
-		// by FolderSelector. Just ensure recent paths are updated.
+		// or filePaths by FolderSelector. Just ensure recent paths are updated.
 		if (triggerPath && !scanState.recentPaths.includes(triggerPath)) {
 			scanState.recentPaths = [triggerPath, ...scanState.recentPaths.slice(0, 4)];
 		}
 
-		// Nothing to scan if no folders
-		if (scanState.folderPaths.length === 0) return;
+		// Nothing to scan if no folders and no files
+		if (scanState.folderPaths.length === 0 && scanState.filePaths.length === 0) return;
 
-		// Reset scan state but preserve folderPaths and recentPaths
-		const paths = [...scanState.folderPaths];
+		// Reset scan state but preserve folderPaths, filePaths, and recentPaths
+		const folderPaths = [...scanState.folderPaths];
+		const filePaths = [...scanState.filePaths];
 		const recent = [...scanState.recentPaths];
 		scanState.results = [];
 		scanState.selectedPaths = new Set();
@@ -43,13 +44,14 @@
 		dryRunResults = null;
 		renameResults = null;
 		scanState.loading = true;
-		scanState.folderPaths = paths;
+		scanState.folderPaths = folderPaths;
+		scanState.filePaths = filePaths;
 		scanState.recentPaths = recent;
 
 		// Scan each folder sequentially
-		for (let i = 0; i < paths.length; i++) {
+		for (let i = 0; i < folderPaths.length; i++) {
 			scanState.scanningFolderIndex = i;
-			const path = paths[i];
+			const path = folderPaths[i];
 
 			const onEvent = new Channel<ScanEvent>();
 			onEvent.onmessage = (message: ScanEvent) => {
@@ -78,6 +80,21 @@
 				scanError = scanError
 					? `${scanError}\nCould not scan ${folderName}: ${msg}`
 					: `Could not scan ${folderName}: ${msg}`;
+			}
+		}
+
+		// Scan individual files (from drag-and-drop)
+		if (filePaths.length > 0) {
+			try {
+				const fileResults = await invoke<ScanResult[]>('scan_files', { paths: filePaths });
+				for (const result of fileResults) {
+					scanState.results = [...scanState.results, result];
+				}
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
+				scanError = scanError
+					? `${scanError}\nCould not scan files: ${msg}`
+					: `Could not scan files: ${msg}`;
 			}
 		}
 
@@ -181,13 +198,34 @@
 					<p class="text-sm text-muted-foreground">No files match the current filter</p>
 				</div>
 			{:else}
-				{#each scanState.filteredResults as result (result.source_path)}
+				{@const results = scanState.filteredResults}
+				{#each results as result, i (result.source_path)}
+					{@const conflictGroup = scanState.getConflictGroupInfo(result)}
+					{@const prevResult = i > 0 ? results[i - 1] : null}
+					{@const nextResult = i < results.length - 1 ? results[i + 1] : null}
+					{@const isFirstInGroup = result.status === 'Conflict' && (!prevResult || prevResult.status !== 'Conflict' || prevResult.proposed_path !== result.proposed_path)}
+					{@const isLastInGroup = result.status === 'Conflict' && (!nextResult || nextResult.status !== 'Conflict' || nextResult.proposed_path !== result.proposed_path)}
+
+					{#if isFirstInGroup && conflictGroup}
+						<div class="flex items-center gap-2 px-4 py-1.5 bg-rose-500/[0.06] border-b border-rose-500/15 border-l-2 border-l-rose-500/40">
+							<span class="text-[11px] font-medium text-rose-400">
+								Conflict group {conflictGroup.groupIndex}
+							</span>
+							<span class="text-[10px] text-rose-400/60">
+								{conflictGroup.groupSize} files target the same output — select one
+							</span>
+						</div>
+					{/if}
+
 					<ScanRow
 						{result}
 						selected={scanState.selectedPaths.has(result.source_path)}
 						onToggleSelect={() => scanState.toggleSelect(result.source_path)}
 						expanded={expandedPaths.has(result.source_path)}
 						onToggleExpand={() => toggleExpand(result.source_path)}
+						{conflictGroup}
+						{isFirstInGroup}
+						{isLastInGroup}
 					/>
 				{/each}
 			{/if}

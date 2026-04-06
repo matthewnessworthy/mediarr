@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { stat } from '@tauri-apps/plugin-fs';
-	import { dirname } from '@tauri-apps/api/path';
 	import { listen } from '@tauri-apps/api/event';
 	import { onMount, onDestroy } from 'svelte';
 	import { scanState } from '$lib/state/scan.svelte.js';
@@ -24,13 +23,20 @@
 	let recentOpen = $state(false);
 
 	/**
-	 * Resolve a dropped path to a directory. If the path is a file,
-	 * return its parent directory so scan_folder receives a valid dir.
+	 * Classify a dropped path as either a file or a directory.
+	 * Returns { type: 'file' | 'dir', path } so the caller can
+	 * route files to scan_files and directories to scan_folder.
 	 */
-	async function resolveToDirectory(path: string): Promise<string> {
-		const info = await stat(path);
-		if (info.isDirectory) return path;
-		return await dirname(path);
+	async function classifyPath(path: string): Promise<{ type: 'file' | 'dir'; path: string }> {
+		try {
+			const info = await stat(path);
+			return { type: info.isDirectory ? 'dir' : 'file', path };
+		} catch {
+			// stat may fail outside the fs plugin's allowed scope.
+			// Fall back to extension heuristic.
+			const name = path.split(/[\\/]/).pop() || '';
+			return { type: /\.\w{2,5}$/.test(name) ? 'file' : 'dir', path };
+		}
 	}
 
 	onMount(async () => {
@@ -38,19 +44,23 @@
 			dragOver = false;
 			const paths = event.payload.paths;
 			if (paths && paths.length > 0) {
-				// Resolve all dropped paths to directories (files -> parent dir)
-				const resolved = await Promise.all(paths.map(resolveToDirectory));
-				// Deduplicate
-				const unique = [...new Set(resolved)];
-				// Add all to scan state and track in recent paths
-				for (const folder of unique) {
+				const classified = await Promise.all(paths.map(classifyPath));
+				const folders = [...new Set(classified.filter(c => c.type === 'dir').map(c => c.path))];
+				const files = [...new Set(classified.filter(c => c.type === 'file').map(c => c.path))];
+
+				// Add folders to scan state and track in recent paths
+				for (const folder of folders) {
 					scanState.addFolder(folder);
 					if (!scanState.recentPaths.includes(folder)) {
 						scanState.recentPaths = [folder, ...scanState.recentPaths].slice(0, 5);
 					}
 				}
-				// Trigger scan — startScan will scan all folderPaths
-				onSelect(unique[0]);
+				// Add individual files to scan state
+				for (const file of files) {
+					scanState.addFile(file);
+				}
+				// Trigger scan
+				onSelect(folders[0] ?? files[0]);
 			}
 		});
 		// If component was destroyed while listen() was resolving, clean up immediately

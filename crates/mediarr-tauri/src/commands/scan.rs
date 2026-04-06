@@ -18,6 +18,28 @@ pub fn scan_folder(state: State<'_, ManagedState>, path: String) -> CommandResul
     Ok(results)
 }
 
+/// Scan individual files and return all results at once.
+///
+/// Each path is scanned independently via [`Scanner::scan_file`]. Non-video
+/// files and missing paths are silently skipped (an error event would be
+/// overkill for drag-and-drop where the user may drop mixed content).
+#[tauri::command]
+pub fn scan_files(
+    state: State<'_, ManagedState>,
+    paths: Vec<String>,
+) -> CommandResult<Vec<ScanResult>> {
+    let state = state.lock().map_err(|_| CommandError::StateLock)?;
+    let scanner = Scanner::new(state.config.clone());
+    let mut results = Vec::new();
+    for p in &paths {
+        match scanner.scan_file(Path::new(p)) {
+            Ok(r) => results.push(r),
+            Err(_) => { /* skip non-video / missing files */ }
+        }
+    }
+    Ok(results)
+}
+
 /// Events emitted during a streaming scan.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
