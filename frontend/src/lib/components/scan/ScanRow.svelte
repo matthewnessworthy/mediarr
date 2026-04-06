@@ -33,20 +33,7 @@
 	const isAmbiguous = $derived(result.status === 'Ambiguous');
 	const isConflict = $derived(result.status === 'Conflict');
 
-	const formattedTitle = $derived(() => {
-		const info = result.media_info;
-		if (info.media_type === 'Movie') {
-			return info.year ? `${info.title} (${info.year})` : info.title;
-		}
-		// Series or Anime
-		const season = info.season != null ? `S${String(info.season).padStart(2, '0')}` : '';
-		const episode =
-			info.episodes.length > 0
-				? `E${info.episodes.map((e) => String(e).padStart(2, '0')).join('E')}`
-				: '';
-		const se = [season, episode].filter(Boolean).join('');
-		return se ? `${info.title} ${se}` : info.title;
-	});
+	const outputFilename = $derived(basename(result.proposed_path));
 
 	function basename(path: string): string {
 		return path.split(/[\\/]/).pop() ?? path;
@@ -147,13 +134,13 @@
 				<MediaBadge mediaType={result.media_info.media_type} />
 			{/if}
 
-			<!-- Title + episode info -->
-			<span class="flex-1 min-w-0 truncate font-medium text-sm text-foreground">
-				{formattedTitle()}
+			<!-- Output filename -->
+			<span class="flex-1 min-w-0 break-all font-medium text-sm text-foreground">
+				{outputFilename}
 			</span>
 
 			<!-- Metadata pills (hidden at narrow widths via overflow) -->
-			<div class="hidden sm:block min-w-0 overflow-hidden">
+			<div class="hidden sm:block min-w-0">
 				<MetadataPills mediaInfo={result.media_info} />
 			</div>
 
@@ -167,12 +154,12 @@
 
 		<!-- Line 2: source path -> proposed path -->
 		<div class="flex items-center gap-2 pl-7 sm:pl-[4.25rem] min-w-0">
-			<span class="truncate-start font-mono text-[11px] text-muted-foreground min-w-0 flex-1" title={result.source_path}>
-				{basename(result.source_path)}
+			<span class="break-all font-mono text-[11px] text-muted-foreground min-w-0 flex-1" title={result.source_path}>
+				{expanded ? result.source_path : basename(result.source_path)}
 			</span>
 			<span class="text-muted-foreground/50 shrink-0">&rarr;</span>
-			<span class="truncate font-mono text-[11px] text-foreground/80 min-w-0 flex-1" title={result.proposed_path}>
-				{result.proposed_path}
+			<span class="break-all font-mono text-[11px] text-foreground/80 min-w-0 flex-1" title={result.proposed_path}>
+				{expanded ? result.proposed_path : basename(result.proposed_path)}
 			</span>
 		</div>
 	</button>
@@ -183,10 +170,6 @@
 			{#if result.subtitles.length > 0}
 				<div class="px-4 pb-3">
 					<SubtitleTree subtitles={result.subtitles} />
-				</div>
-			{:else if expanded}
-				<div class="px-4 pb-3 ml-8 pl-4">
-					<span class="text-xs text-muted-foreground/60">No subtitles found</span>
 				</div>
 			{/if}
 
@@ -210,14 +193,6 @@
 				</div>
 			{/if}
 
-			<!-- Template type indicator -->
-			{#if expanded}
-				<div class="px-4 pb-2 pl-7 sm:pl-[4.25rem]">
-					<span class="text-[11px] text-muted-foreground/60">
-						Using: {result.media_info.media_type} template
-					</span>
-				</div>
-			{/if}
 		</div>
 	</div>
 </div>

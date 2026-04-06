@@ -42,13 +42,13 @@
 					{sub.discovery_method}
 				</span>
 
-				<span class="truncate font-mono text-[11px] text-muted-foreground" title={sub.source_path}>
+				<span class="break-all font-mono text-[11px] text-muted-foreground" title={sub.source_path}>
 					{basename(sub.source_path)}
 				</span>
 
 				<span class="text-muted-foreground/50 shrink-0">&rarr;</span>
 
-				<span class="truncate font-mono text-[11px] text-foreground/80" title={sub.proposed_path}>
+				<span class="break-all font-mono text-[11px] text-foreground/80" title={sub.proposed_path}>
 					{basename(sub.proposed_path)}
 				</span>
 			</div>

@@ -138,14 +138,6 @@
 	@apply bg-muted rounded-md;
 }
 
-/* Truncate from the left -- shows filename end (most informative part) */
-.truncate-start {
-	direction: rtl;
-	text-align: left;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
 
 /* Scrollbar styling for dark/light */
 ::-webkit-scrollbar {

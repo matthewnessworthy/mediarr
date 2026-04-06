@@ -114,7 +114,7 @@
 					{#each scanState.recentPaths as path}
 						<button
 							type="button"
-							class="w-full text-left px-2 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-sm truncate transition-colors"
+							class="w-full text-left px-2 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-sm break-all transition-colors"
 							style="transition-duration: var(--duration-fast);"
 							title={path}
 							onclick={() => selectRecent(path)}
@@ -160,7 +160,7 @@
 					{#each scanState.recentPaths as path}
 						<button
 							type="button"
-							class="w-full text-left px-3 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-md truncate transition-colors focus-ring"
+							class="w-full text-left px-3 py-1.5 text-xs font-mono text-muted-foreground hover:bg-accent hover:text-foreground rounded-md break-all transition-colors focus-ring"
 							style="transition-duration: var(--duration-fast);"
 							title={path}
 							onclick={() => { scanState.addFolder(path); onSelect(path); }}

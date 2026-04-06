@@ -175,7 +175,7 @@
 <div class="flex h-full flex-col">
 	{#if showMain}
 		<!-- Top bar with path, count, search, folder selector -->
-		<ScanTopBar onSelect={startScan} />
+		<ScanTopBar />
 
 		<!-- Filter tabs -->
 		<FilterTabs />

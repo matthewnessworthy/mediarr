@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { scanState } from '$lib/state/scan.svelte.js';
-	import FolderSelector from './FolderSelector.svelte';
 	import { Search, X } from '@lucide/svelte';
-
-	const { onSelect }: { onSelect: (path: string) => void } = $props();
 
 	const progressPercent = $derived(
 		scanState.scanProgress.total > 0
@@ -32,7 +29,7 @@
 		<div class="flex items-center gap-1.5 min-w-0 flex-wrap">
 			{#each scanState.folderPaths as path}
 				<span
-					class="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-0.5 text-xs font-mono text-muted-foreground max-w-48 truncate"
+					class="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-0.5 text-xs font-mono text-muted-foreground"
 					title={path}
 				>
 					{path.split('/').pop() || path}
@@ -49,7 +46,7 @@
 			{/each}
 			{#each scanState.filePaths as path}
 				<span
-					class="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-0.5 text-xs font-mono text-muted-foreground max-w-48 truncate"
+					class="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-0.5 text-xs font-mono text-muted-foreground"
 					title={path}
 				>
 					{path.split('/').pop() || path}
@@ -103,7 +100,5 @@
 			/>
 		</div>
 
-		<!-- Folder selector (compact mode) -->
-		<FolderSelector {onSelect} compact />
 	</div>
 </div>
