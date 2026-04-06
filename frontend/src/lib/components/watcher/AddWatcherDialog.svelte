@@ -8,9 +8,11 @@
 
 	let {
 		open = $bindable(false),
+		initialPath = '',
 		onAdded,
 	}: {
 		open: boolean;
+		initialPath?: string;
 		onAdded?: () => void;
 	} = $props();
 
@@ -19,6 +21,13 @@
 	let debounceSeconds = $state(5);
 	let saving = $state(false);
 	let error = $state('');
+
+	// Pre-fill path when initialPath changes (e.g. from drag-and-drop)
+	$effect(() => {
+		if (initialPath) {
+			folderPath = initialPath;
+		}
+	});
 
 	async function browsePath() {
 		const selected = await openDialog({ directory: true, multiple: false });
@@ -114,17 +123,20 @@
 			</div>
 
 			<div class="flex flex-col gap-1.5">
-				<label for="debounce" class="text-xs font-medium text-muted-foreground">
-					Debounce (seconds)
+				<label for="settle-time" class="text-xs font-medium text-muted-foreground">
+					Settle time (seconds)
 				</label>
 				<input
-					id="debounce"
+					id="settle-time"
 					type="number"
 					min="1"
 					max="60"
 					bind:value={debounceSeconds}
 					class="w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
 				/>
+				<p class="text-[11px] text-muted-foreground/60">
+					How long to wait after the last file change before processing. Increase if files arrive slowly (e.g. torrents).
+				</p>
 			</div>
 
 			{#if error}

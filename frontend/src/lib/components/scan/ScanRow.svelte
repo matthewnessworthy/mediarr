@@ -31,12 +31,41 @@
 	} = $props();
 
 	const isAmbiguous = $derived(result.status === 'Ambiguous');
-	const isConflict = $derived(result.status === 'Conflict');
+	const isCollision = $derived(result.status === 'Conflict');
 
-	const outputFilename = $derived(basename(result.proposed_path));
+	const outputDisplay = $derived(displayPath(result.proposed_path, result.source_path));
 
 	function basename(path: string): string {
 		return path.split(/[\\/]/).pop() ?? path;
+	}
+
+	function dirname(path: string): string {
+		const parts = path.split(/[\\/]/);
+		return parts.slice(0, -1).join('/');
+	}
+
+	function displayPath(proposed: string, source: string): string {
+		const proposedDir = dirname(proposed);
+		const sourceDir = dirname(source);
+
+		if (proposedDir === sourceDir) {
+			return basename(proposed);
+		}
+
+		const pParts = proposed.split(/[\\/]/);
+		const sParts = sourceDir.split(/[\\/]/);
+
+		let commonLen = 0;
+		for (let i = 0; i < Math.min(pParts.length, sParts.length); i++) {
+			if (pParts[i] === sParts[i]) commonLen = i + 1;
+			else break;
+		}
+
+		const relative = pParts.slice(commonLen).join('/');
+		if (relative.length > 80) {
+			return pParts.slice(-3).join('/');
+		}
+		return relative;
 	}
 
 	function handleRowClick() {
@@ -82,8 +111,8 @@
 	class={cn(
 		'border-b border-border/50',
 		isAmbiguous && 'bg-amber-500/[0.03]',
-		isConflict && 'bg-rose-500/[0.04] border-l-2 border-l-rose-500/40',
-		isConflict && !isLastInGroup && 'border-b-rose-500/20',
+		isCollision && 'bg-rose-500/[0.04] border-l-2 border-l-rose-500/40',
+		isCollision && !isLastInGroup && 'border-b-rose-500/20',
 		selected && 'bg-accent/30'
 	)}
 >
@@ -115,10 +144,10 @@
 				/>
 
 				<!-- Media type badge -->
-				{#if isConflict}
+				{#if isCollision}
 					<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-rose-500/15 text-rose-400">
 						<TriangleAlert class="size-3" />
-						Conflict
+						Collision
 					</span>
 					{#if conflictGroup}
 						<span class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-rose-400/70 bg-rose-500/8">
@@ -137,7 +166,7 @@
 
 				<!-- Output filename -->
 				<span class="flex-1 min-w-0 break-all font-medium text-sm text-foreground">
-					{outputFilename}
+					{outputDisplay}
 				</span>
 
 				<!-- Metadata pills (hidden at narrow widths via overflow) -->
@@ -163,9 +192,9 @@
 
 		<button
 			type="button"
-			class="shrink-0 p-2 mt-1.5 mr-1 text-muted-foreground/30 hover:text-foreground transition-colors"
+			class="shrink-0 p-2 mr-1 self-center text-muted-foreground/30 hover:text-foreground transition-colors"
 			style="transition-duration: var(--duration-fast);"
-			aria-label="Remove {outputFilename} from results"
+			aria-label="Remove from results"
 			onclick={() => scanState.removeResult(result.source_path)}
 		>
 			<X class="size-3.5" />
@@ -192,8 +221,8 @@
 				/>
 			{/if}
 
-			<!-- Conflict reason -->
-			{#if isConflict && expanded && result.ambiguity_reason}
+			<!-- Collision reason -->
+			{#if isCollision && expanded && result.ambiguity_reason}
 				<div class="px-4 pb-2 pl-7 sm:pl-[4.25rem]">
 					<span class="text-[11px] text-rose-400/80">
 						{result.ambiguity_reason}

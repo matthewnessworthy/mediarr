@@ -49,7 +49,7 @@
 			<span class="text-emerald-400">{summary?.valid} valid</span>
 			{#if summary?.conflicts}
 				<span class="text-muted-foreground">, </span>
-				<span class="text-amber-400">{summary?.conflicts} conflict{summary?.conflicts !== 1 ? 's' : ''}</span>
+				<span class="text-amber-400">{summary?.conflicts} collision{summary?.conflicts !== 1 ? 's' : ''}</span>
 			{/if}
 		</span>
 	{/if}
@@ -70,25 +70,6 @@
 
 	<!-- Actions -->
 	<div class="flex items-center gap-2">
-		<button
-			type="button"
-			class="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-			onclick={() => scanState.selectAll()}
-			disabled={scanState.selectedCount === totalFiltered}
-		>
-			Select All
-		</button>
-		<button
-			type="button"
-			class="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-			onclick={() => scanState.deselectAll()}
-			disabled={!hasSelection}
-		>
-			Deselect All
-		</button>
-
-		<div class="w-px h-4 bg-border mx-1"></div>
-
 		<Button variant="outline" size="sm" disabled={!hasSelection || executing} onclick={onDryRun}>
 			{#if executing}
 				<Loader2 class="size-3.5 animate-spin mr-1.5" />

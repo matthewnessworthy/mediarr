@@ -81,7 +81,7 @@
 		</div>
 	{:else if configState.config}
 		<Tabs.Root value="templates">
-			<Tabs.List>
+			<Tabs.List variant="line">
 				<Tabs.Trigger value="templates">Templates</Tabs.Trigger>
 				<Tabs.Trigger value="subtitles">Subtitles</Tabs.Trigger>
 				<Tabs.Trigger value="general">General</Tabs.Trigger>

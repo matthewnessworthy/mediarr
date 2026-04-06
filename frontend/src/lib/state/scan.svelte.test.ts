@@ -405,7 +405,7 @@ describe('ScanState', () => {
 				mockScanResult({ source_path: '/dup-b.mkv', status: 'Conflict', proposed_path: '/out/same.mkv' }),
 			];
 			flushSync();
-			expect(scanState.counts.conflicts).toBe(2);
+			expect(scanState.counts.collisions).toBe(2);
 		});
 
 		it('getConflictGroupInfo returns null for non-conflict results', () => {

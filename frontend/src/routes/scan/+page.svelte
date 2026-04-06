@@ -7,6 +7,7 @@
 	import ScanRow from '$lib/components/scan/ScanRow.svelte';
 	import FilterTabs from '$lib/components/scan/FilterTabs.svelte';
 	import EmptyState from '$lib/components/scan/EmptyState.svelte';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 
 	let expandedPaths = $state<Set<string>>(new Set());
 	let scanError = $state<string | null>(null);
@@ -15,6 +16,27 @@
 	let executing = $state(false);
 
 	const hasResults = $derived(scanState.results.length > 0);
+
+	// Header checkbox state: computed from collision-aware selection
+	const selectableCount = $derived(() => {
+		const collisionPaths = new Set<string>();
+		for (const siblings of scanState.conflictGroups.values()) {
+			for (const p of siblings) collisionPaths.add(p);
+		}
+		return scanState.filteredResults.filter((r) => !collisionPaths.has(r.source_path)).length;
+	});
+	const allSelected = $derived(selectableCount() > 0 && scanState.selectedCount >= selectableCount());
+	const someSelected = $derived(scanState.selectedCount > 0);
+	const headerIndeterminate = $derived(someSelected && !allSelected);
+
+	function handleHeaderCheckbox() {
+		if (allSelected) {
+			scanState.deselectAll();
+		} else {
+			scanState.selectAll();
+		}
+	}
+
 	const showMain = $derived(
 		scanState.results.length > 0 || scanState.loading || scanState.folderPaths.length > 0 || scanState.filePaths.length > 0
 	);
@@ -119,7 +141,7 @@
 	 */
 	function getSelectedEntries(): { source_path: string; dest_path: string; media_info?: MediaInfo }[] {
 		const entries: { source_path: string; dest_path: string; media_info?: MediaInfo }[] = [];
-		for (const result of scanState.results) {
+		for (const result of scanState.filteredResults) {
 			if (!scanState.selectedPaths.has(result.source_path)) continue;
 			// Video file entry with full media info
 			entries.push({
@@ -182,6 +204,19 @@
 
 		<!-- Results list -->
 		<div class="flex-1 overflow-y-auto">
+			{#if hasResults && scanState.filteredResults.length > 0}
+				<!-- Header row with select-all checkbox -->
+				<div class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-muted/30 sticky top-0 z-10">
+					<Checkbox
+						checked={allSelected}
+						indeterminate={headerIndeterminate}
+						onCheckedChange={handleHeaderCheckbox}
+					/>
+					<span class="text-[11px] text-muted-foreground">
+						{scanState.selectedCount} of {scanState.filteredResults.length} selected
+					</span>
+				</div>
+			{/if}
 			{#if scanError}
 				<div class="flex items-center justify-center p-8">
 					<div class="text-center">
@@ -209,7 +244,7 @@
 					{#if isFirstInGroup && conflictGroup}
 						<div class="flex items-center gap-2 px-4 py-1.5 bg-rose-500/[0.06] border-b border-rose-500/15 border-l-2 border-l-rose-500/40">
 							<span class="text-[11px] font-medium text-rose-400">
-								Conflict group {conflictGroup.groupIndex}
+								Collision group {conflictGroup.groupIndex}
 							</span>
 							<span class="text-[10px] text-rose-400/60">
 								{conflictGroup.groupSize} files target the same output — select one

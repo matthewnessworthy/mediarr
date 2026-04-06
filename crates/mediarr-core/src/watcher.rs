@@ -968,4 +968,429 @@ mod tests {
             "expected at least 1 watcher event with default config (no output_dir), got {count}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Test: Rapid file additions are debounced into fewer callback invocations
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_debounces_rapid_file_additions() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let event_count = Arc::new(AtomicUsize::new(0));
+        let event_count_clone = event_count.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |_event| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-debounce".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    // 2-second debounce window
+                    watcher.run(&watch_path_clone, WatcherMode::Auto, 2, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to initialize
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Rapidly create 5 video files within the debounce window
+        for i in 1..=5 {
+            let video = watch_path.join(format!("Movie.{}.2020.1080p.mkv", 2000 + i));
+            fs::write(&video, format!("video data {i}").as_bytes()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        // Wait for debounce (2s) + processing time
+        std::thread::sleep(std::time::Duration::from_secs(5));
+
+        // Shutdown
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(
+            result.is_ok(),
+            "watcher run should complete without error: {:?}",
+            result
+        );
+
+        // All 5 files should have been processed (debouncer batches them)
+        let count = event_count.load(Ordering::SeqCst);
+        assert!(
+            count >= 5,
+            "expected at least 5 watcher events from rapid additions, got {count}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Callback is invoked with correct WatcherEvent data
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn callback_receives_correct_event_data() {
+        use std::sync::{Arc, Mutex};
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let captured_events: Arc<Mutex<Vec<WatcherEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = captured_events.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |event| {
+            captured_clone.lock().unwrap().push(event.clone());
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-callback".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to start
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Create a video file
+        let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        // Wait for debounce + processing
+        std::thread::sleep(std::time::Duration::from_secs(4));
+
+        // Shutdown
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(result.is_ok(), "watcher run should succeed: {:?}", result);
+
+        let events = captured_events.lock().unwrap();
+        assert!(!events.is_empty(), "should have captured at least one event");
+
+        let event = &events[0];
+        assert_eq!(event.action, WatcherAction::Renamed);
+        assert!(
+            event.filename.contains("Inception"),
+            "filename should contain 'Inception', got: {}",
+            event.filename
+        );
+        assert_eq!(event.watch_path, watch_path);
+        assert!(event.detail.is_some(), "event should have detail");
+        assert!(event.batch_id.is_some(), "renamed event should have batch_id");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Review mode callback receives Queued action
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn review_mode_callback_receives_queued_action() {
+        use std::sync::{Arc, Mutex};
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let captured_events: Arc<Mutex<Vec<WatcherEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = captured_events.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |event| {
+            captured_clone.lock().unwrap().push(event.clone());
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-review-cb".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    watcher.run(&watch_path_clone, WatcherMode::Review, 1, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to start
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Create a video file
+        let video = watch_path.join("The.Office.S02E03.720p.mkv");
+        fs::write(&video, b"series data").unwrap();
+
+        // Wait for debounce + processing
+        std::thread::sleep(std::time::Duration::from_secs(4));
+
+        // Shutdown
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(result.is_ok(), "watcher run should succeed: {:?}", result);
+
+        let events = captured_events.lock().unwrap();
+        assert!(!events.is_empty(), "should have captured at least one event");
+        assert_eq!(events[0].action, WatcherAction::Queued);
+
+        // File should still exist (review mode doesn't rename)
+        assert!(video.exists(), "source file should still exist in review mode");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Non-video files dropped into watched directory are ignored
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_ignores_non_video_files() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+
+        let event_count = Arc::new(AtomicUsize::new(0));
+        let event_count_clone = event_count.clone();
+
+        let mut watcher = WatcherManager::new(config, history);
+        watcher.set_on_event(Box::new(move |_event| {
+            event_count_clone.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+        let watch_path_clone = watch_path.clone();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-nonvid".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(
+                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
+                )
+            })
+            .expect("spawn watcher thread");
+
+        // Wait for watcher to start
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Create non-video files only
+        fs::write(watch_path.join("readme.txt"), b"text").unwrap();
+        fs::write(watch_path.join("image.jpg"), b"image").unwrap();
+        fs::write(watch_path.join("subtitle.srt"), b"sub").unwrap();
+
+        // Wait for debounce + processing
+        std::thread::sleep(std::time::Duration::from_secs(4));
+
+        // Shutdown
+        let _ = shutdown_tx.send(true);
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(result.is_ok(), "watcher run should succeed: {:?}", result);
+
+        // No events should have been processed (all non-video)
+        let count = event_count.load(Ordering::SeqCst);
+        assert_eq!(
+            count, 0,
+            "non-video files should not trigger watcher events, got {count}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: Shutdown signal stops the watcher cleanly
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn shutdown_signal_stops_watcher() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+        let watcher = WatcherManager::new(config, history);
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let watch_path = source.path().to_path_buf();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-shutdown".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(watcher.run(&watch_path, WatcherMode::Auto, 1, shutdown_rx))
+            })
+            .expect("spawn watcher thread");
+
+        // Let watcher start
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Send shutdown immediately
+        let _ = shutdown_tx.send(true);
+
+        // Thread should exit within a reasonable time
+        let result = thread_handle.join().expect("watcher thread should not panic");
+        assert!(
+            result.is_ok(),
+            "watcher should shut down cleanly: {:?}",
+            result
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: run_with_init_signal reports success on valid path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_with_init_signal_reports_success() {
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+        let watcher = WatcherManager::new(config, history);
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
+
+        let watch_path = source.path().to_path_buf();
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-init".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path,
+                    WatcherMode::Auto,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
+            })
+            .expect("spawn watcher thread");
+
+        // Should receive Ok(()) from init signal
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("should receive init signal");
+        assert!(
+            init_result.is_ok(),
+            "init signal should be Ok, got: {:?}",
+            init_result
+        );
+
+        // Shutdown
+        let _ = shutdown_tx.send(true);
+        let _ = thread_handle.join();
+    }
+
+    // -----------------------------------------------------------------------
+    // Test: run_with_init_signal reports error for invalid path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_with_init_signal_reports_error_for_invalid_path() {
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+        let watcher = WatcherManager::new(config, history);
+
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
+
+        // Use a path that doesn't exist
+        let watch_path = PathBuf::from("/tmp/nonexistent_watcher_test_dir_12345");
+
+        let thread_handle = std::thread::Builder::new()
+            .name("test-watcher-init-err".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build tokio runtime");
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path,
+                    WatcherMode::Auto,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
+            })
+            .expect("spawn watcher thread");
+
+        // Should receive an error from init signal
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("should receive init signal");
+        assert!(
+            init_result.is_err(),
+            "init signal should be Err for invalid path, got: {:?}",
+            init_result
+        );
+
+        let _ = thread_handle.join();
+    }
 }

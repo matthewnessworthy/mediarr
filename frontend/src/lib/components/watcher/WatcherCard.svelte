@@ -2,18 +2,24 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Trash2 } from '@lucide/svelte';
 	import type { WatcherConfig } from '$lib/types';
 
 	const {
 		watcher,
 		eventCounts = { processed: 0, errors: 0, pending: 0 },
+		onRemove,
+		onToggled,
 	}: {
 		watcher: WatcherConfig;
 		eventCounts?: { processed: number; errors: number; pending: number };
+		onRemove?: (path: string) => void;
+		onToggled?: () => void;
 	} = $props();
 
 	let toggling = $state(false);
-	let active = $state(watcher.active);
+	let toggleError = $state<string | null>(null);
+	const active = $derived(watcher.active);
 
 	function truncatePath(path: string, maxLen = 45): string {
 		if (path.length <= maxLen) return path;
@@ -24,14 +30,15 @@
 
 	async function handleToggle(checked: boolean) {
 		toggling = true;
+		toggleError = null;
 		try {
 			const command = checked ? 'start_watcher' : 'stop_watcher';
 			await invoke(command, { path: watcher.path });
-			active = checked;
+			// Reload watchers to reflect persisted active state
+			onToggled?.();
 		} catch (e) {
 			console.error('Watcher toggle failed:', e);
-			// Revert to original state on error
-			active = !checked;
+			toggleError = e instanceof Error ? e.message : String(e);
 		} finally {
 			toggling = false;
 		}
@@ -61,6 +68,17 @@
 			onCheckedChange={handleToggle}
 			size="sm"
 		/>
+
+		<button
+			type="button"
+			class="shrink-0 p-1 text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-30"
+			style="transition-duration: var(--duration-fast);"
+			aria-label="Remove watched folder"
+			disabled={active}
+			onclick={() => onRemove?.(watcher.path)}
+		>
+			<Trash2 class="size-3.5" />
+		</button>
 	</div>
 
 	<div class="mt-2 flex items-center gap-4 pl-5 text-xs text-muted-foreground">
@@ -68,4 +86,8 @@
 		<span>Errors: <span class="tabular-nums {eventCounts.errors > 0 ? 'text-destructive' : 'text-foreground/70'}">{eventCounts.errors}</span></span>
 		<span>Pending: <span class="tabular-nums text-foreground/70">{eventCounts.pending}</span></span>
 	</div>
+
+	{#if toggleError}
+		<p class="mt-1.5 pl-5 text-[11px] text-destructive">{toggleError}</p>
+	{/if}
 </div>

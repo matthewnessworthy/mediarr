@@ -1014,6 +1014,36 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
+    fn episode_only_file_produces_se_without_season_digits() {
+        // Files like "Show.E05.mkv" (no season) classified as Series
+        // should NOT produce "SE05" in the proposed path
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+
+        // Episode-only filename (no S01 prefix)
+        let video = source.path().join("Some.Show.E05.720p.mkv");
+        fs::write(&video, b"video").unwrap();
+
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(&video).unwrap();
+
+        eprintln!("=== Episode-only file ===");
+        eprintln!("title: {:?}", result.media_info.title);
+        eprintln!("season: {:?}", result.media_info.season);
+        eprintln!("episodes: {:?}", result.media_info.episodes);
+        eprintln!("media_type: {:?}", result.media_info.media_type);
+        eprintln!("proposed_path: {}", result.proposed_path.display());
+
+        let path_str = result.proposed_path.to_string_lossy();
+        // The bug: if season is None, path contains "SE05" instead of "S01E05"
+        assert!(
+            !path_str.contains("SE05") && !path_str.contains("SE5"),
+            "proposed_path should NOT contain bare 'SE' without season digits, got: {}",
+            path_str
+        );
+    }
+
+    #[test]
     fn filter_empty_returns_all_results() {
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();

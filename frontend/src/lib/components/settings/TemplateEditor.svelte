@@ -76,12 +76,12 @@
 		{ name: '{episode}', desc: 'Episode number' },
 		{ name: '{episode:02}', desc: 'Episode, zero-padded' },
 		{ name: '{resolution}', desc: 'e.g. 1080p, 720p' },
-		{ name: '{codec}', desc: 'Video codec' },
-		{ name: '{audio}', desc: 'Audio codec' },
+		{ name: '{video_codec}', desc: 'Video codec' },
+		{ name: '{audio_codec}', desc: 'Audio codec' },
 		{ name: '{source}', desc: 'e.g. BluRay, WEB-DL' },
-		{ name: '{group}', desc: 'Release group' },
+		{ name: '{release_group}', desc: 'Release group' },
+		{ name: '{language}', desc: 'Content language' },
 		{ name: '{ext}', desc: 'File extension' },
-		{ name: '{type}', desc: 'Subtitle type' },
 	];
 
 	async function updatePreview() {

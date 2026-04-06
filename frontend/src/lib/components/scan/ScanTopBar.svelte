@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { scanState } from '$lib/state/scan.svelte.js';
-	import { Search, X } from '@lucide/svelte';
+	import { Search } from '@lucide/svelte';
 
 	const progressPercent = $derived(
 		scanState.scanProgress.total > 0
@@ -37,18 +37,6 @@
 				<span class="text-xs text-muted-foreground/60 shrink-0 animate-pulse">Scanning...</span>
 			{/if}
 
-			<!-- Clear button — before spacer so it stays visible near the file count -->
-			{#if scanState.folderPaths.length > 0 || scanState.filePaths.length > 0 || scanState.results.length > 0}
-				<button
-					type="button"
-					class="text-xs text-muted-foreground/60 hover:text-foreground transition-colors shrink-0 ml-1"
-					style="transition-duration: var(--duration-fast);"
-					onclick={() => { scanState.reset(); }}
-					aria-label="Clear scan results"
-				>
-					<X class="size-3.5" />
-				</button>
-			{/if}
 		</div>
 
 		<!-- Spacer -->

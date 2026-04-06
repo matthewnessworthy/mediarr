@@ -65,8 +65,8 @@ class ScanState {
 		const movies = this.results.filter((r) => r.media_info.media_type === 'Movie').length;
 		const anime = this.results.filter((r) => r.media_info.media_type === 'Anime').length;
 		const ambiguous = this.results.filter((r) => r.status === 'Ambiguous').length;
-		const conflicts = this.results.filter((r) => r.status === 'Conflict').length;
-		return { all, series, movies, anime, ambiguous, conflicts };
+		const collisions = this.results.filter((r) => r.status === 'Conflict').length;
+		return { all, series, movies, anime, ambiguous, collisions };
 	}
 
 	/**

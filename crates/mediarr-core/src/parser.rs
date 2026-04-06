@@ -112,6 +112,15 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
         .map(|s| s.to_owned())
         .unwrap_or_else(|| extract_extension(original_filename));
 
+    // Default season to 1 for Series/Anime when episodes are present but season
+    // is missing.  Files like "Show.E05.mkv" omit the season prefix; treating
+    // them as season 1 prevents the template from producing "SE05" instead of
+    // "S01E05".
+    let season = match (&media_type, season, episodes.is_empty()) {
+        (MediaType::Series | MediaType::Anime, None, false) => Some(1),
+        _ => season,
+    };
+
     Ok(MediaInfo {
         title,
         media_type,
@@ -413,5 +422,35 @@ mod tests {
         let info = parse_filename("Some.Movie.2024.weird_ext").unwrap();
         // The container should be extracted from the filename
         assert!(!info.container.is_empty());
+    }
+
+    // ── Season defaulting for episode-only filenames ──
+
+    #[test]
+    fn episode_only_series_defaults_season_to_one() {
+        // Files like "Show.E05.mkv" have episode but no season.
+        // Parser should default season to 1 to avoid "SE05" in templates.
+        let info = parse_filename("Some.Show.E05.720p.mkv").unwrap();
+        assert_eq!(
+            info.season,
+            Some(1),
+            "season should default to 1 when episodes present but season missing"
+        );
+        assert_eq!(info.episodes, vec![5]);
+    }
+
+    #[test]
+    fn explicit_season_is_not_overridden() {
+        // Files with explicit season should keep their parsed value
+        let info = parse_filename("The.Office.S02E03.720p.mkv").unwrap();
+        assert_eq!(info.season, Some(2));
+        assert_eq!(info.episodes, vec![3]);
+    }
+
+    #[test]
+    fn movie_without_season_stays_none() {
+        // Movies should NOT get a default season
+        let info = parse_filename("Inception.2010.1080p.BluRay.mkv").unwrap();
+        assert_eq!(info.season, None);
     }
 }

@@ -174,6 +174,14 @@ pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path
 
     info!(path = %path, "watcher started and confirmed running");
 
+    // Persist active = true in config so watchers survive app restart
+    if let Some(wc) = state.config.watchers.iter_mut().find(|w| w.path.to_string_lossy() == path) {
+        wc.active = true;
+    }
+    let config_path = mediarr_core::config::default_config_path()
+        .map_err(|e| CommandError::Other(format!("failed to determine config path: {e}")))?;
+    state.config.save(&config_path)?;
+
     state.active_watchers.insert(
         path,
         WatcherHandle {
@@ -201,6 +209,14 @@ pub fn stop_watcher(state: State<'_, ManagedState>, path: String) -> CommandResu
 
     // Send shutdown signal (ignore error if receiver already dropped)
     let _ = handle.shutdown_tx.send(true);
+
+    // Persist active = false in config so watcher stays off after app restart
+    if let Some(wc) = state.config.watchers.iter_mut().find(|w| w.path.to_string_lossy() == path) {
+        wc.active = false;
+    }
+    if let Ok(config_path) = mediarr_core::config::default_config_path() {
+        let _ = state.config.save(&config_path);
+    }
 
     info!(path = %path, "watcher stop signal sent");
 

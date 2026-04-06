@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
+	import { stat } from '@tauri-apps/plugin-fs';
 	import { Plus, Eye } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { watcherState } from '$lib/state/watcher.svelte';
@@ -12,7 +13,17 @@
 	import type { WatcherConfig, WatcherEvent, ReviewQueueEntry } from '$lib/types';
 
 	let unlisten: (() => void) | null = null;
+	let unlistenDrag: (() => void) | null = null;
 	let addDialogOpen = $state(false);
+	let dragInitialPath = $state('');
+	let dragOver = $state(false);
+
+	// Clear drag path when dialog closes (Cancel or sheet dismiss)
+	$effect(() => {
+		if (!addDialogOpen && dragInitialPath) {
+			dragInitialPath = '';
+		}
+	});
 
 	function eventCountsFor(watchPath: string) {
 		const matching = watcherState.events.filter((e) => e.watch_path === watchPath);
@@ -45,6 +56,28 @@
 		});
 	}
 
+	async function removeWatcher(path: string) {
+		try {
+			const config = await invoke<import('$lib/types').Config>('get_config');
+			config.watchers = config.watchers.filter((w: import('$lib/types').WatcherConfig) => w.path !== path);
+			await invoke('update_config', { config });
+			await loadWatchers();
+		} catch (e) {
+			console.error('Failed to remove watcher:', e);
+		}
+	}
+
+	async function isDirectory(path: string): Promise<boolean> {
+		try {
+			const info = await stat(path);
+			return info.isDirectory;
+		} catch {
+			// Fallback: if stat fails, assume directory if no file extension
+			const name = path.split(/[\\/]/).pop() || '';
+			return !/\.\w{2,5}$/.test(name);
+		}
+	}
+
 	onMount(async () => {
 		await loadWatchers();
 
@@ -56,12 +89,38 @@
 				refreshReviewQueue();
 			}
 		});
+
+		// Listen for drag-and-drop to add watched folders
+		unlistenDrag = await listen<{ paths: string[] }>('tauri://drag-drop', async (event) => {
+			dragOver = false;
+			const paths = event.payload.paths;
+			if (!paths || paths.length === 0) return;
+
+			// Find the first directory in the dropped paths
+			for (const path of paths) {
+				if (await isDirectory(path)) {
+					dragInitialPath = path;
+					addDialogOpen = true;
+					return;
+				}
+			}
+		});
 	});
 
-	onDestroy(() => unlisten?.());
+	onDestroy(() => {
+		unlisten?.();
+		unlistenDrag?.();
+	});
 </script>
 
-<div class="p-8">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="p-8 min-h-full transition-colors {dragOver ? 'bg-accent/10' : ''}"
+	style="transition-duration: var(--duration-normal);"
+	ondragover={(e) => { e.preventDefault(); dragOver = true; }}
+	ondragleave={() => (dragOver = false)}
+	ondrop={(e) => e.preventDefault()}
+>
 	<div class="mb-6 flex items-center justify-between">
 		<div class="flex items-baseline gap-3">
 			<h2 class="text-lg font-medium text-foreground">Watcher</h2>
@@ -95,13 +154,13 @@
 		<div class="flex flex-col items-center justify-center py-24">
 			<Eye class="size-10 mb-5 text-muted-foreground/30" />
 			<p class="text-sm text-muted-foreground text-center leading-relaxed max-w-xs">
-				No folders being watched. Add a folder to start monitoring for new media files.
+				No folders being watched. Drop a folder here or click Add Folder to start monitoring for new media files.
 			</p>
 		</div>
 	{:else}
 		<div class="mb-8">
 			{#each watcherState.watchers as watcher (watcher.path)}
-				<WatcherCard {watcher} eventCounts={eventCountsFor(watcher.path)} />
+				<WatcherCard {watcher} eventCounts={eventCountsFor(watcher.path)} onRemove={removeWatcher} onToggled={loadWatchers} />
 			{/each}
 		</div>
 
@@ -122,4 +181,8 @@
 	{/if}
 </div>
 
-<AddWatcherDialog bind:open={addDialogOpen} onAdded={loadWatchers} />
+<AddWatcherDialog
+	bind:open={addDialogOpen}
+	initialPath={dragInitialPath}
+	onAdded={() => { dragInitialPath = ''; loadWatchers(); }}
+/>
