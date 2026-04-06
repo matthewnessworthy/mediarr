@@ -241,7 +241,7 @@
 />
 
 <Sheet.Root bind:open={editDialogOpen}>
-	<Sheet.Content side="right" class="overflow-y-auto">
+	<Sheet.Content side="right">
 		<Sheet.Header>
 			<Sheet.Title>Edit Watcher</Sheet.Title>
 			<Sheet.Description>
@@ -249,7 +249,7 @@
 			</Sheet.Description>
 		</Sheet.Header>
 
-		<div class="flex flex-col gap-5 px-6 py-4">
+		<div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-5 px-6 py-4">
 			<div class="flex flex-col gap-1.5">
 				<span class="text-xs font-medium text-muted-foreground">Mode</span>
 				<div class="flex items-center gap-4">

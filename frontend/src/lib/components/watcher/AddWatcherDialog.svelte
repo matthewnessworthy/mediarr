@@ -89,7 +89,7 @@
 			</Sheet.Description>
 		</Sheet.Header>
 
-		<div class="flex flex-col gap-5 px-6 py-4">
+		<div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-5 px-6 py-4">
 			<div class="flex flex-col gap-1.5">
 				<label for="watch-path" class="text-xs font-medium text-muted-foreground">Folder Path</label>
 				<div class="flex items-center gap-2">
