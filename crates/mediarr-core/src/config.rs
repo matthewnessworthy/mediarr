@@ -87,8 +87,8 @@ impl Default for GeneralConfig {
 impl Default for TemplateConfig {
     fn default() -> Self {
         Self {
-            movie: "{title} ({year})/{title} ({year}).{ext}".to_string(),
-            series: "{title}/{title} - S{season:02}E{episode:02}.{ext}".to_string(),
+            movie: "{Title} ({year})/{Title} ({year}).{ext}".to_string(),
+            series: "{Title}/{Title} - S{season:02}E{episode:02}.{ext}".to_string(),
         }
     }
 }
@@ -246,7 +246,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(
             config.templates.movie,
-            "{title} ({year})/{title} ({year}).{ext}"
+            "{Title} ({year})/{Title} ({year}).{ext}"
         );
     }
 
@@ -255,7 +255,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(
             config.templates.series,
-            "{title}/{title} - S{season:02}E{episode:02}.{ext}"
+            "{Title}/{Title} - S{season:02}E{episode:02}.{ext}"
         );
     }
 

@@ -21,6 +21,7 @@ static TEMPLATE_RE: LazyLock<Regex> =
 /// Known template variable names.
 const KNOWN_VARIABLES: &[&str] = &[
     "title",
+    "Title",
     "year",
     "season",
     "episode",
@@ -160,7 +161,12 @@ impl TemplateEngine {
         };
 
         for (var, msg) in required {
-            if !present.iter().any(|p| p == var) {
+            let satisfied = if var == "title" {
+                present.iter().any(|p| p == "title" || p == "Title")
+            } else {
+                present.iter().any(|p| p == var)
+            };
+            if !satisfied {
                 warnings.push(TemplateWarning {
                     variable: var.to_string(),
                     message: msg.to_string(),
@@ -178,11 +184,28 @@ impl Default for TemplateEngine {
     }
 }
 
+/// Convert a string to Title Case (first letter of each word uppercase, rest lowercase).
+fn to_title_case(s: &str) -> String {
+    s.split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    first.to_uppercase().to_string() + &chars.as_str().to_lowercase()
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Build a variable lookup map from MediaInfo (excludes episode — handled separately).
 fn build_vars(info: &MediaInfo) -> HashMap<String, String> {
     let mut vars = HashMap::new();
 
     vars.insert("title".to_string(), info.title.clone());
+    vars.insert("Title".to_string(), to_title_case(&info.title));
     vars.insert(
         "year".to_string(),
         info.year.map(|y| y.to_string()).unwrap_or_default(),
