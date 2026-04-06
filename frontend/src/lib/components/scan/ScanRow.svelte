@@ -8,7 +8,7 @@
 	import MetadataPills from './MetadataPills.svelte';
 	import SubtitleTree from './SubtitleTree.svelte';
 	import AmbiguityPanel from './AmbiguityPanel.svelte';
-	import { ChevronRight, TriangleAlert, Link } from '@lucide/svelte';
+	import { ChevronRight, TriangleAlert, Link, X } from '@lucide/svelte';
 
 	const {
 		result,
@@ -88,81 +88,89 @@
 	)}
 >
 	<!-- Collapsed row -->
-	<button
-		type="button"
-		aria-expanded={expanded}
-		class="flex w-full min-w-0 flex-col gap-0.5 px-4 py-1.5 text-left hover:bg-accent/20 transition-colors focus-ring"
-		style="transition-duration: var(--duration-fast);"
-		onclick={handleRowClick}
-	>
-		<!-- Line 1: title row -->
-		<div class="flex items-center gap-2 min-w-0">
-			<!-- Checkbox -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div onclick={handleCheckboxClick}>
-				<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
-			</div>
+	<div class="flex items-start">
+		<button
+			type="button"
+			aria-expanded={expanded}
+			class="flex flex-1 min-w-0 flex-col gap-0.5 px-4 py-1.5 text-left hover:bg-accent/20 transition-colors focus-ring"
+			style="transition-duration: var(--duration-fast);"
+			onclick={handleRowClick}
+		>
+			<!-- Line 1: title row -->
+			<div class="flex items-center gap-2 min-w-0">
+				<!-- Checkbox -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div onclick={handleCheckboxClick}>
+					<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
+				</div>
 
-			<!-- Expand indicator -->
-			<ChevronRight
-				class={cn(
-					'size-3.5 shrink-0 text-muted-foreground/60 transition-transform',
-					expanded && 'rotate-90'
-				)}
-				style="transition-duration: var(--duration-fast);"
-			/>
+				<!-- Expand indicator -->
+				<ChevronRight
+					class={cn(
+						'size-3.5 shrink-0 text-muted-foreground/60 transition-transform',
+						expanded && 'rotate-90'
+					)}
+					style="transition-duration: var(--duration-fast);"
+				/>
 
-			<!-- Media type badge -->
-			{#if isConflict}
-				<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-rose-500/15 text-rose-400">
-					<TriangleAlert class="size-3" />
-					Conflict
+				<!-- Media type badge -->
+				{#if isConflict}
+					<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-rose-500/15 text-rose-400">
+						<TriangleAlert class="size-3" />
+						Conflict
+					</span>
+					{#if conflictGroup}
+						<span class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-rose-400/70 bg-rose-500/8">
+							<Link class="size-2.5" />
+							{conflictGroup.groupSize}
+						</span>
+					{/if}
+					<MediaBadge mediaType={result.media_info.media_type} />
+				{:else if isAmbiguous}
+					<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-amber-500/15 text-amber-400">
+						Ambiguous
+					</span>
+				{:else}
+					<MediaBadge mediaType={result.media_info.media_type} />
+				{/if}
+
+				<!-- Output filename -->
+				<span class="flex-1 min-w-0 break-all font-medium text-sm text-foreground">
+					{outputFilename}
 				</span>
-				{#if conflictGroup}
-					<span class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-rose-400/70 bg-rose-500/8">
-						<Link class="size-2.5" />
-						{conflictGroup.groupSize}
+
+				<!-- Metadata pills (hidden at narrow widths via overflow) -->
+				<div class="hidden sm:block min-w-0">
+					<MetadataPills mediaInfo={result.media_info} />
+				</div>
+
+				<!-- Subtitle count (hidden at narrow widths) -->
+				{#if result.subtitles.length > 0}
+					<span class="hidden sm:inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/40">
+						{result.subtitles.length} sub{result.subtitles.length !== 1 ? 's' : ''}
 					</span>
 				{/if}
-				<MediaBadge mediaType={result.media_info.media_type} />
-			{:else if isAmbiguous}
-				<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-amber-500/15 text-amber-400">
-					Ambiguous
-				</span>
-			{:else}
-				<MediaBadge mediaType={result.media_info.media_type} />
-			{/if}
-
-			<!-- Output filename -->
-			<span class="flex-1 min-w-0 break-all font-medium text-sm text-foreground">
-				{outputFilename}
-			</span>
-
-			<!-- Metadata pills (hidden at narrow widths via overflow) -->
-			<div class="hidden sm:block min-w-0">
-				<MetadataPills mediaInfo={result.media_info} />
 			</div>
 
-			<!-- Subtitle count (hidden at narrow widths) -->
-			{#if result.subtitles.length > 0}
-				<span class="hidden sm:inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/40">
-					{result.subtitles.length} sub{result.subtitles.length !== 1 ? 's' : ''}
+			<!-- Line 2: source filename -->
+			<div class="flex items-center gap-2 pl-[1.85rem] sm:pl-[2.15rem] min-w-0">
+				<span class="break-all font-mono text-[11px] text-muted-foreground min-w-0 flex-1" title={result.source_path}>
+					{expanded ? result.source_path : basename(result.source_path)}
 				</span>
-			{/if}
-		</div>
+			</div>
+		</button>
 
-		<!-- Line 2: source path -> proposed path -->
-		<div class="flex items-center gap-2 pl-7 sm:pl-[4.25rem] min-w-0">
-			<span class="break-all font-mono text-[11px] text-muted-foreground min-w-0 flex-1" title={result.source_path}>
-				{expanded ? result.source_path : basename(result.source_path)}
-			</span>
-			<span class="text-muted-foreground/50 shrink-0">&rarr;</span>
-			<span class="break-all font-mono text-[11px] text-foreground/80 min-w-0 flex-1" title={result.proposed_path}>
-				{expanded ? result.proposed_path : basename(result.proposed_path)}
-			</span>
-		</div>
-	</button>
+		<button
+			type="button"
+			class="shrink-0 p-2 mt-1.5 mr-1 text-muted-foreground/30 hover:text-foreground transition-colors"
+			style="transition-duration: var(--duration-fast);"
+			aria-label="Remove {outputFilename} from results"
+			onclick={() => scanState.removeResult(result.source_path)}
+		>
+			<X class="size-3.5" />
+		</button>
+	</div>
 
 	<!-- Expanded content with smooth grid-template-rows transition -->
 	<div class={cn('expandable', expanded && 'expanded')}>

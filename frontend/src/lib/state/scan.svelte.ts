@@ -181,6 +181,13 @@ class ScanState {
 		this.filePaths = this.filePaths.filter(p => p !== path);
 	}
 
+	removeResult(sourcePath: string) {
+		this.results = this.results.filter(r => r.source_path !== sourcePath);
+		const next = new Set(this.selectedPaths);
+		next.delete(sourcePath);
+		this.selectedPaths = next;
+	}
+
 	clearAll() {
 		this.reset();
 	}
