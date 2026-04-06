@@ -94,8 +94,9 @@ pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path
         )));
     }
 
-    // Clone what we need for the spawned thread
-    let config = state.config.clone();
+    // Resolve per-watcher settings onto the global config so Scanner and
+    // Renamer operate with watcher-specific overrides transparently.
+    let config = watcher_config.resolve_config(&state.config);
     let data_path = mediarr_core::config::default_data_path()
         .map_err(|e| CommandError::Other(format!("failed to determine data path: {e}")))?;
     let watch_path = PathBuf::from(&path);
@@ -272,6 +273,9 @@ pub fn approve_review_entry(
     };
 
     // 4. Execute rename
+    // Review entries don't store which watcher queued them, so use
+    // global config for rename operations. Per-watcher settings apply
+    // only during auto-mode processing within the watcher thread.
     let renamer = mediarr_core::Renamer::from_config(&state.config.general);
     let results = renamer.execute(&plan);
     let all_success = results.iter().all(|r| r.success);

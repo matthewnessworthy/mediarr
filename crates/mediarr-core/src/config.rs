@@ -11,7 +11,6 @@ use tracing::{debug, info};
 use crate::error::{MediError, Result};
 use crate::types::{
     ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation, WatcherConfig,
-    WatcherSettings,
 };
 
 /// Top-level application configuration.
