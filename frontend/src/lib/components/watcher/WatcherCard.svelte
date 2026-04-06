@@ -2,7 +2,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Switch } from '$lib/components/ui/switch';
-	import { Trash2 } from '@lucide/svelte';
+	import { Trash2, Settings2 } from '@lucide/svelte';
 	import type { WatcherConfig } from '$lib/types';
 
 	const {
@@ -10,12 +10,18 @@
 		eventCounts = { processed: 0, errors: 0, pending: 0 },
 		onRemove,
 		onToggled,
+		onEdit,
 	}: {
 		watcher: WatcherConfig;
 		eventCounts?: { processed: number; errors: number; pending: number };
 		onRemove?: (path: string) => void;
 		onToggled?: () => void;
+		onEdit?: (path: string) => void;
 	} = $props();
+
+	const hasCustomSettings = $derived(
+		watcher.settings != null && Object.values(watcher.settings).some(v => v != null)
+	);
 
 	let toggling = $state(false);
 	let toggleError = $state<string | null>(null);
@@ -52,11 +58,25 @@
 			style="transition-duration: var(--duration-normal);"
 		></span>
 
-		<div class="flex-1 min-w-0">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="flex-1 min-w-0 cursor-pointer"
+			role="button"
+			tabindex="0"
+			onclick={() => onEdit?.(watcher.path)}
+			onkeydown={(e) => { if (e.key === 'Enter') onEdit?.(watcher.path); }}
+		>
 			<span class="block truncate text-sm font-medium text-foreground" title={watcher.path}>
 				{truncatePath(watcher.path)}
 			</span>
 		</div>
+
+		{#if hasCustomSettings}
+			<Badge variant="outline" class="shrink-0 text-[10px] font-normal gap-1">
+				<Settings2 class="size-2.5" />
+				Custom
+			</Badge>
+		{/if}
 
 		<Badge variant="secondary" class="shrink-0 text-[10px] font-normal">
 			{watcher.mode === 'auto' ? 'Auto-rename' : 'Queue for review'}

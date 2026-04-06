@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { FolderOpen } from '@lucide/svelte';
+	import { FolderOpen, Settings2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Sheet from '$lib/components/ui/sheet';
-	import type { Config, WatcherMode } from '$lib/types';
+	import WatcherSettingsEditor from './WatcherSettingsEditor.svelte';
+	import type { Config, WatcherMode, WatcherSettings } from '$lib/types';
 
 	let {
 		open = $bindable(false),
@@ -21,6 +22,15 @@
 	let debounceSeconds = $state(5);
 	let saving = $state(false);
 	let error = $state('');
+	let showSettings = $state(false);
+	let watcherSettings = $state<WatcherSettings>({});
+	let globalConfig = $state<Config | null>(null);
+
+	$effect(() => {
+		if (open && !globalConfig) {
+			invoke<Config>('get_config').then(c => { globalConfig = c; });
+		}
+	});
 
 	// Pre-fill path when initialPath changes (e.g. from drag-and-drop)
 	$effect(() => {
@@ -45,19 +55,21 @@
 		error = '';
 		try {
 			const config = await invoke<Config>('get_config');
-			config.watchers = [
-				...config.watchers,
-				{
-					path: folderPath,
-					mode,
-					active: false,
-					debounce_seconds: debounceSeconds,
-				},
-			];
+			const hasOverrides = Object.values(watcherSettings).some(v => v != null);
+			const newWatcher = {
+				path: folderPath,
+				mode,
+				active: false,
+				debounce_seconds: debounceSeconds,
+				...(hasOverrides ? { settings: watcherSettings } : {}),
+			};
+			config.watchers = [...config.watchers, newWatcher];
 			await invoke('update_config', { config });
 			folderPath = '';
 			mode = 'auto';
 			debounceSeconds = 5;
+			showSettings = false;
+			watcherSettings = {};
 			open = false;
 			onAdded?.();
 		} catch (e) {
@@ -138,6 +150,21 @@
 					How long to wait after the last file change before processing. Increase if files arrive slowly (e.g. torrents).
 				</p>
 			</div>
+
+			<button
+				type="button"
+				class="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+				onclick={() => (showSettings = !showSettings)}
+			>
+				<Settings2 class="size-3" />
+				{showSettings ? 'Hide' : 'Show'} custom settings
+			</button>
+
+			{#if showSettings && globalConfig}
+				<div class="border-t border-border/50 pt-4 mt-2">
+					<WatcherSettingsEditor bind:settings={watcherSettings} {globalConfig} />
+				</div>
+			{/if}
 
 			{#if error}
 				<p class="text-xs text-destructive">{error}</p>

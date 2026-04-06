@@ -3,20 +3,32 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen } from '@tauri-apps/api/event';
 	import { stat } from '@tauri-apps/plugin-fs';
-	import { Plus, Eye } from '@lucide/svelte';
+	import { Plus, Eye, Settings2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as Sheet from '$lib/components/ui/sheet';
 	import { watcherState } from '$lib/state/watcher.svelte';
 	import WatcherCard from '$lib/components/watcher/WatcherCard.svelte';
 	import ActivityLog from '$lib/components/watcher/ActivityLog.svelte';
 	import ReviewQueue from '$lib/components/watcher/ReviewQueue.svelte';
 	import AddWatcherDialog from '$lib/components/watcher/AddWatcherDialog.svelte';
-	import type { WatcherConfig, WatcherEvent, ReviewQueueEntry } from '$lib/types';
+	import WatcherSettingsEditor from '$lib/components/watcher/WatcherSettingsEditor.svelte';
+	import type { WatcherConfig, WatcherEvent, ReviewQueueEntry, Config, WatcherMode, WatcherSettings } from '$lib/types';
 
 	let unlisten: (() => void) | null = null;
 	let unlistenDrag: (() => void) | null = null;
 	let addDialogOpen = $state(false);
 	let dragInitialPath = $state('');
 	let dragOver = $state(false);
+
+	// Edit dialog state
+	let editDialogOpen = $state(false);
+	let editingWatcher = $state<WatcherConfig | null>(null);
+	let editSettings = $state<WatcherSettings>({});
+	let editMode = $state<WatcherMode>('auto');
+	let editDebounce = $state(5);
+	let editSaving = $state(false);
+	let editError = $state('');
+	let editGlobalConfig = $state<Config | null>(null);
 
 	// Clear drag path when dialog closes (Cancel or sheet dismiss)
 	$effect(() => {
@@ -66,6 +78,45 @@
 			await loadWatchers();
 		} catch (e) {
 			console.error('Failed to remove watcher:', e);
+		}
+	}
+
+	async function openEditDialog(path: string) {
+		const watcher = watcherState.watchers.find(w => w.path === path);
+		if (!watcher) return;
+		editingWatcher = watcher;
+		editMode = watcher.mode;
+		editDebounce = watcher.debounce_seconds;
+		editSettings = watcher.settings ? { ...watcher.settings } : {};
+		editGlobalConfig = await invoke<Config>('get_config');
+		editError = '';
+		editDialogOpen = true;
+	}
+
+	async function handleEditSave() {
+		if (!editingWatcher) return;
+		editSaving = true;
+		editError = '';
+		try {
+			const config = await invoke<Config>('get_config');
+			const hasOverrides = Object.values(editSettings).some(v => v != null);
+			config.watchers = config.watchers.map(w =>
+				w.path === editingWatcher!.path
+					? {
+						...w,
+						mode: editMode,
+						debounce_seconds: editDebounce,
+						...(hasOverrides ? { settings: editSettings } : { settings: null }),
+					}
+					: w
+			);
+			await invoke('update_config', { config });
+			editDialogOpen = false;
+			await loadWatchers();
+		} catch (e) {
+			editError = String(e);
+		} finally {
+			editSaving = false;
 		}
 	}
 
@@ -162,7 +213,7 @@
 	{:else}
 		<div class="mb-8">
 			{#each watcherState.watchers as watcher (watcher.path)}
-				<WatcherCard {watcher} eventCounts={eventCountsFor(watcher.path)} onRemove={removeWatcher} onToggled={loadWatchers} />
+				<WatcherCard {watcher} eventCounts={eventCountsFor(watcher.path)} onRemove={removeWatcher} onToggled={loadWatchers} onEdit={openEditDialog} />
 			{/each}
 		</div>
 
@@ -188,3 +239,67 @@
 	initialPath={dragInitialPath}
 	onAdded={() => { dragInitialPath = ''; loadWatchers(); }}
 />
+
+<Sheet.Root bind:open={editDialogOpen}>
+	<Sheet.Content side="right" class="overflow-y-auto">
+		<Sheet.Header>
+			<Sheet.Title>Edit Watcher</Sheet.Title>
+			<Sheet.Description>
+				{editingWatcher?.path ?? ''}
+			</Sheet.Description>
+		</Sheet.Header>
+
+		<div class="flex flex-col gap-5 px-6 py-4">
+			<div class="flex flex-col gap-1.5">
+				<span class="text-xs font-medium text-muted-foreground">Mode</span>
+				<div class="flex items-center gap-4">
+					<label class="flex items-center gap-2 text-sm cursor-pointer">
+						<input type="radio" name="edit-watcher-mode" value="auto" bind:group={editMode} class="accent-primary" />
+						Auto-rename
+					</label>
+					<label class="flex items-center gap-2 text-sm cursor-pointer">
+						<input type="radio" name="edit-watcher-mode" value="review" bind:group={editMode} class="accent-primary" />
+						Queue for review
+					</label>
+				</div>
+			</div>
+
+			<div class="flex flex-col gap-1.5">
+				<label for="edit-settle-time" class="text-xs font-medium text-muted-foreground">Settle time (seconds)</label>
+				<input
+					id="edit-settle-time"
+					type="number"
+					min="1"
+					max="60"
+					bind:value={editDebounce}
+					class="w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+				/>
+			</div>
+
+			<div class="border-t border-border/50 pt-4">
+				<h3 class="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+					<Settings2 class="size-3" />
+					Custom Settings
+				</h3>
+				{#if editGlobalConfig}
+					<WatcherSettingsEditor bind:settings={editSettings} globalConfig={editGlobalConfig} />
+				{/if}
+			</div>
+
+			{#if editingWatcher?.active}
+				<p class="text-[11px] text-amber-500">Settings changes require restarting the watcher to take effect.</p>
+			{/if}
+
+			{#if editError}
+				<p class="text-xs text-destructive">{editError}</p>
+			{/if}
+		</div>
+
+		<Sheet.Footer>
+			<Button variant="outline" onclick={() => (editDialogOpen = false)}>Cancel</Button>
+			<Button disabled={editSaving} onclick={handleEditSave}>
+				{editSaving ? 'Saving...' : 'Save Changes'}
+			</Button>
+		</Sheet.Footer>
+	</Sheet.Content>
+</Sheet.Root>
