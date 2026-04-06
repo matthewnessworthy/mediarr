@@ -59,14 +59,18 @@ class ScanState {
 		return this.selectedPaths.size;
 	}
 
+	/** Count of selected items within the current filtered view. */
+	get filteredSelectedCount(): number {
+		return this.filteredResults.filter((r) => this.selectedPaths.has(r.source_path)).length;
+	}
+
 	get counts() {
 		const all = this.results.length;
 		const series = this.results.filter((r) => r.media_info.media_type === 'Series').length;
 		const movies = this.results.filter((r) => r.media_info.media_type === 'Movie').length;
-		const anime = this.results.filter((r) => r.media_info.media_type === 'Anime').length;
 		const ambiguous = this.results.filter((r) => r.status === 'Ambiguous').length;
 		const collisions = this.results.filter((r) => r.status === 'Conflict').length;
-		return { all, series, movies, anime, ambiguous, collisions };
+		return { all, series, movies, ambiguous, collisions };
 	}
 
 	/**

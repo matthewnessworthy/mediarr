@@ -11,10 +11,8 @@ use std::path::PathBuf;
 pub enum MediaType {
     /// Feature film.
     Movie,
-    /// TV series episode.
+    /// TV series episode (includes anime).
     Series,
-    /// Anime episode.
-    Anime,
 }
 
 impl fmt::Display for MediaType {
@@ -22,7 +20,6 @@ impl fmt::Display for MediaType {
         match self {
             MediaType::Movie => write!(f, "Movie"),
             MediaType::Series => write!(f, "Series"),
-            MediaType::Anime => write!(f, "Anime"),
         }
     }
 }
@@ -46,11 +43,11 @@ pub enum ParseConfidence {
 pub struct MediaInfo {
     /// Extracted title of the media.
     pub title: String,
-    /// Detected media type (Movie, Series, Anime).
+    /// Detected media type (Movie or Series).
     pub media_type: MediaType,
     /// Release year, if detected.
     pub year: Option<u16>,
-    /// Season number, if detected (series/anime).
+    /// Season number, if detected (series).
     pub season: Option<u16>,
     /// Episode numbers. May contain multiple for multi-episode files.
     pub episodes: Vec<u16>,
@@ -409,9 +406,6 @@ pub struct WatcherSettings {
     /// Override series template.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series_template: Option<String>,
-    /// Override anime template.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub anime_template: Option<String>,
     /// Override subtitle enabled toggle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtitles_enabled: Option<bool>,
@@ -432,7 +426,6 @@ impl WatcherSettings {
             && self.create_directories.is_none()
             && self.movie_template.is_none()
             && self.series_template.is_none()
-            && self.anime_template.is_none()
             && self.subtitles_enabled.is_none()
             && self.preferred_languages.is_none()
             && self.non_preferred_action.is_none()
@@ -685,7 +678,6 @@ mod tests {
     fn media_type_display() {
         assert_eq!(MediaType::Movie.to_string(), "Movie");
         assert_eq!(MediaType::Series.to_string(), "Series");
-        assert_eq!(MediaType::Anime.to_string(), "Anime");
     }
 
     #[test]
@@ -767,7 +759,6 @@ mod tests {
         assert!(s.create_directories.is_none());
         assert!(s.movie_template.is_none());
         assert!(s.series_template.is_none());
-        assert!(s.anime_template.is_none());
         assert!(s.subtitles_enabled.is_none());
         assert!(s.preferred_languages.is_none());
         assert!(s.non_preferred_action.is_none());

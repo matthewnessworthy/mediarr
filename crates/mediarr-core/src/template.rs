@@ -157,12 +157,6 @@ impl TemplateEngine {
                 ("episode", "Series templates should include {episode}"),
                 ("ext", "Templates should include {ext} for file extension"),
             ],
-            MediaType::Anime => vec![
-                ("title", "Anime templates should include {title}"),
-                ("season", "Anime templates should include {season}"),
-                ("episode", "Anime templates should include {episode}"),
-                ("ext", "Templates should include {ext} for file extension"),
-            ],
         };
 
         for (var, msg) in required {
@@ -362,24 +356,6 @@ mod tests {
             release_group: Some("LOL".to_string()),
             container: "mkv".to_string(),
             language: None,
-            confidence: ParseConfidence::High,
-        }
-    }
-
-    fn anime_info() -> MediaInfo {
-        MediaInfo {
-            title: "Attack on Titan".to_string(),
-            media_type: MediaType::Anime,
-            year: Some(2013),
-            season: Some(1),
-            episodes: vec![5],
-            resolution: Some("1080p".to_string()),
-            video_codec: Some("HEVC".to_string()),
-            audio_codec: Some("FLAC".to_string()),
-            source: Some("BluRay".to_string()),
-            release_group: Some("SubsPlease".to_string()),
-            container: "mkv".to_string(),
-            language: Some("Japanese".to_string()),
             confidence: ParseConfidence::High,
         }
     }
@@ -783,24 +759,6 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Validation: anime
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn validate_anime_template_missing_season_and_episode() {
-        let engine = super::TemplateEngine::new();
-        let warnings = engine.validate("{title}.{ext}", &MediaType::Anime);
-        assert!(
-            warnings.iter().any(|w| w.variable == "season"),
-            "expected warning about missing season"
-        );
-        assert!(
-            warnings.iter().any(|w| w.variable == "episode"),
-            "expected warning about missing episode"
-        );
-    }
-
-    // -----------------------------------------------------------------------
     // Validation: missing ext warning
     // -----------------------------------------------------------------------
 
@@ -851,7 +809,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Default template patterns from decisions D-01, D-02, D-03
+    // Default template patterns from decisions D-01, D-02
     // -----------------------------------------------------------------------
 
     #[test]
@@ -880,23 +838,6 @@ mod tests {
             .render("{title} ({year})/{title} ({year}).{ext}", &info)
             .unwrap();
         let expected = PathBuf::from("Inception (2010)").join("Inception (2010).mkv");
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn render_default_anime_template() {
-        let engine = super::TemplateEngine::new();
-        let info = anime_info();
-        // D-03 default: "{title}/Season {season:02}/{title} - S{season:02}E{episode:02}.{ext}"
-        let result = engine
-            .render(
-                "{title}/Season {season:02}/{title} - S{season:02}E{episode:02}.{ext}",
-                &info,
-            )
-            .unwrap();
-        let expected = PathBuf::from("Attack on Titan")
-            .join("Season 01")
-            .join("Attack on Titan - S01E05.mkv");
         assert_eq!(result, expected);
     }
 

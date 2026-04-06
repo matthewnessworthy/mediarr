@@ -13,10 +13,9 @@
 	let hasUnsavedChanges = $state(false);
 	let savedSnapshot = $state<string>('');
 
-	const templateTypes: { label: string; mediaType: MediaType; key: 'movie' | 'series' | 'anime' }[] = [
+	const templateTypes: { label: string; mediaType: MediaType; key: 'movie' | 'series' }[] = [
 		{ label: 'Movie', mediaType: 'Movie', key: 'movie' },
 		{ label: 'Series', mediaType: 'Series', key: 'series' },
-		{ label: 'Anime', mediaType: 'Anime', key: 'anime' },
 	];
 
 	onMount(async () => {

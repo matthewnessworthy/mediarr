@@ -14,7 +14,6 @@
 		{ label: 'All', count: scanState.counts.all, filterType: null, filterStatus: null },
 		{ label: 'Series', count: scanState.counts.series, filterType: 'Series', filterStatus: null },
 		{ label: 'Movies', count: scanState.counts.movies, filterType: 'Movie', filterStatus: null },
-		{ label: 'Anime', count: scanState.counts.anime, filterType: 'Anime', filterStatus: null },
 		{ label: 'Ambiguous', count: scanState.counts.ambiguous, filterType: null, filterStatus: 'Ambiguous' },
 		{ label: 'Collisions', count: scanState.counts.collisions, filterType: null, filterStatus: 'Conflict' },
 	]);

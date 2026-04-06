@@ -26,9 +26,6 @@
 
 	<div class="flex items-center gap-4 px-4 py-3 border-b border-border">
 		<div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-			<span class="text-xs text-muted-foreground/60 shrink-0">
-				{scanState.results.length} file{scanState.results.length !== 1 ? 's' : ''}
-			</span>
 			{#if scanState.loading && scanState.folderPaths.length > 1 && scanState.scanningFolderIndex >= 0}
 				<span class="text-xs text-muted-foreground/60 shrink-0">
 					Scanning folder {scanState.scanningFolderIndex + 1} of {scanState.folderPaths.length}...
@@ -36,7 +33,6 @@
 			{:else if scanState.loading}
 				<span class="text-xs text-muted-foreground/60 shrink-0 animate-pulse">Scanning...</span>
 			{/if}
-
 		</div>
 
 		<!-- Spacer -->

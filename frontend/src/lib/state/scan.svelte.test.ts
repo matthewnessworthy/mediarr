@@ -163,7 +163,7 @@ describe('ScanState', () => {
 			}),
 			mockScanResult({
 				source_path: '/a1.mkv',
-				media_info: mockMediaInfo({ media_type: 'Anime' }),
+				media_info: mockMediaInfo({ media_type: 'Series' }),
 				status: 'Ambiguous',
 				ambiguity_reason: 'Multiple matches',
 			}),
@@ -172,8 +172,7 @@ describe('ScanState', () => {
 		const c = scanState.counts;
 		expect(c.all).toBe(4);
 		expect(c.movies).toBe(2);
-		expect(c.series).toBe(1);
-		expect(c.anime).toBe(1);
+		expect(c.series).toBe(2);
 		expect(c.ambiguous).toBe(1);
 	});
 

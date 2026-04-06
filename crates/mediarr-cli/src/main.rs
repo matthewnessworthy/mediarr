@@ -51,7 +51,7 @@ pub struct ScanArgs {
     #[arg(short, long, default_value_t = true)]
     pub recursive: bool,
     /// Filter by media type
-    #[arg(short = 't', long = "type", value_parser = ["series", "movie", "anime"])]
+    #[arg(short = 't', long = "type", value_parser = ["series", "movie"])]
     pub media_type: Option<String>,
     /// Preview mode (same as scan, included for consistency)
     #[arg(long)]

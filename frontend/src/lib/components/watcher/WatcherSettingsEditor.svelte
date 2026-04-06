@@ -220,34 +220,6 @@
 		/>
 	</div>
 
-	<!-- Anime Template -->
-	<div class="space-y-1.5 mt-3">
-		<div class="flex items-center justify-between">
-			<span class="text-xs font-medium text-muted-foreground">Anime Template</span>
-			<div class="flex items-center gap-2">
-				<span class="text-[10px] text-muted-foreground/60">Override</span>
-				<Switch
-					checked={settings.anime_template != null}
-					onCheckedChange={(checked: boolean) => {
-						if (checked) {
-							settings.anime_template = globalConfig.templates.anime;
-						} else {
-							settings.anime_template = undefined;
-						}
-					}}
-					size="sm"
-				/>
-			</div>
-		</div>
-		<input
-			type="text"
-			value={settings.anime_template != null ? settings.anime_template : globalConfig.templates.anime}
-			disabled={settings.anime_template == null}
-			oninput={(e) => { settings.anime_template = (e.currentTarget as HTMLInputElement).value; }}
-			class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm font-mono text-xs {settings.anime_template == null ? 'opacity-50 cursor-not-allowed' : ''}"
-		/>
-	</div>
-
 	<!-- Subtitles -->
 	<h4 class="text-xs font-medium text-foreground/70 uppercase tracking-wider mt-5 mb-2">Subtitles</h4>
 

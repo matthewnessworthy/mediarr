@@ -11,7 +11,6 @@
 
 	let expandedPaths = $state<Set<string>>(new Set());
 	let scanError = $state<string | null>(null);
-	let dryRunResults = $state<RenameResult[] | null>(null);
 	let renameResults = $state<RenameResult[] | null>(null);
 	let executing = $state(false);
 
@@ -25,8 +24,8 @@
 		}
 		return scanState.filteredResults.filter((r) => !collisionPaths.has(r.source_path)).length;
 	});
-	const allSelected = $derived(selectableCount() > 0 && scanState.selectedCount >= selectableCount());
-	const someSelected = $derived(scanState.selectedCount > 0);
+	const allSelected = $derived(selectableCount() > 0 && scanState.filteredSelectedCount >= selectableCount());
+	const someSelected = $derived(scanState.filteredSelectedCount > 0);
 	const headerIndeterminate = $derived(someSelected && !allSelected);
 
 	function handleHeaderCheckbox() {
@@ -63,7 +62,6 @@
 		scanState.searchQuery = '';
 		expandedPaths = new Set();
 		scanError = null;
-		dryRunResults = null;
 		renameResults = null;
 		scanState.loading = true;
 		scanState.folderPaths = folderPaths;
@@ -160,20 +158,6 @@
 		return entries;
 	}
 
-	async function handleDryRun() {
-		executing = true;
-		dryRunResults = null;
-		renameResults = null;
-		try {
-			const entries = getSelectedEntries();
-			dryRunResults = await invoke<RenameResult[]>('dry_run_renames', { entries });
-		} catch (e) {
-			scanError = e instanceof Error ? e.message : String(e);
-		} finally {
-			executing = false;
-		}
-	}
-
 	async function handleApplyRenames() {
 		executing = true;
 		renameResults = null;
@@ -206,14 +190,14 @@
 		<div class="flex-1 overflow-y-auto">
 			{#if hasResults && scanState.filteredResults.length > 0}
 				<!-- Header row with select-all checkbox -->
-				<div class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-muted/30 sticky top-0 z-10">
+				<div class="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-muted sticky top-0 z-10">
 					<Checkbox
 						checked={allSelected}
 						indeterminate={headerIndeterminate}
 						onCheckedChange={handleHeaderCheckbox}
 					/>
 					<span class="text-[11px] text-muted-foreground">
-						{scanState.selectedCount} of {scanState.filteredResults.length} selected
+						{scanState.filteredSelectedCount} of {scanState.filteredResults.length} selected
 					</span>
 				</div>
 			{/if}
@@ -268,9 +252,7 @@
 
 		<!-- Bottom bar with selection and actions -->
 		<ScanBottomBar
-			onDryRun={handleDryRun}
 			onApplyRenames={handleApplyRenames}
-			{dryRunResults}
 			{renameResults}
 			{executing}
 		/>

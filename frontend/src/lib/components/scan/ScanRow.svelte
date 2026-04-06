@@ -82,9 +82,7 @@
 		const template =
 			chosen.media_type === 'Movie'
 				? config.templates.movie
-				: chosen.media_type === 'Anime'
-					? config.templates.anime
-					: config.templates.series;
+				: config.templates.series;
 		const newPath = await invoke<string>('preview_proposed_path', {
 			template,
 			mediaInfo: chosen,

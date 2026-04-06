@@ -48,10 +48,8 @@ pub struct GeneralConfig {
 pub struct TemplateConfig {
     /// Movie naming template (D-01).
     pub movie: String,
-    /// Series naming template (D-02).
+    /// Series naming template (D-02). Also used for anime.
     pub series: String,
-    /// Anime naming template (D-03).
-    pub anime: String,
 }
 
 /// Subtitle discovery and handling settings.
@@ -91,7 +89,6 @@ impl Default for TemplateConfig {
         Self {
             movie: "{title} ({year})/{title} ({year}).{ext}".to_string(),
             series: "{title}/{title} - S{season:02}E{episode:02}.{ext}".to_string(),
-            anime: "{title}/{title} - S{season:02}E{episode:02}.{ext}".to_string(),
         }
     }
 }
@@ -212,10 +209,6 @@ impl WatcherConfig {
                     .series_template
                     .clone()
                     .unwrap_or_else(|| global.templates.series.clone()),
-                anime: s
-                    .anime_template
-                    .clone()
-                    .unwrap_or_else(|| global.templates.anime.clone()),
             },
             subtitles: SubtitleConfig {
                 enabled: s.subtitles_enabled.unwrap_or(global.subtitles.enabled),
@@ -262,15 +255,6 @@ mod tests {
         let config = Config::default();
         assert_eq!(
             config.templates.series,
-            "{title}/{title} - S{season:02}E{episode:02}.{ext}"
-        );
-    }
-
-    #[test]
-    fn default_anime_template() {
-        let config = Config::default();
-        assert_eq!(
-            config.templates.anime,
             "{title}/{title} - S{season:02}E{episode:02}.{ext}"
         );
     }
@@ -352,7 +336,6 @@ mod tests {
             templates: TemplateConfig {
                 movie: "{title}/{title}.{ext}".to_string(),
                 series: "{title}/S{season:02}/{title} - E{episode:02}.{ext}".to_string(),
-                anime: "{title}/{title} - {episode:02}.{ext}".to_string(),
             },
             subtitles: SubtitleConfig {
                 enabled: false,
@@ -664,7 +647,6 @@ mod tests {
         assert_eq!(resolved.templates.movie, "{title}.{ext}");
         // Non-overridden templates unchanged
         assert_eq!(resolved.templates.series, global.templates.series);
-        assert_eq!(resolved.templates.anime, global.templates.anime);
     }
 
     #[test]

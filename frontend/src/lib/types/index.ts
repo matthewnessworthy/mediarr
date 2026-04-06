@@ -5,7 +5,7 @@
 // Enum types (matching Rust serde serialization)
 // ---------------------------------------------------------------------------
 
-export type MediaType = 'Movie' | 'Series' | 'Anime';
+export type MediaType = 'Movie' | 'Series';
 export type ScanStatus = 'Ok' | 'Ambiguous' | 'Conflict' | 'Error';
 export type ParseConfidence = 'High' | 'Medium' | 'Low';
 export type SubtitleType = 'Forced' | 'Sdh' | 'Hi' | 'Commentary';
@@ -126,7 +126,7 @@ export interface WatcherSettings {
 	create_directories?: boolean | null;
 	movie_template?: string | null;
 	series_template?: string | null;
-	anime_template?: string | null;
+
 	subtitles_enabled?: boolean | null;
 	preferred_languages?: string[] | null;
 	non_preferred_action?: NonPreferredAction | null;
@@ -182,7 +182,6 @@ export interface GeneralConfig {
 export interface TemplateConfig {
 	movie: string;
 	series: string;
-	anime: string;
 }
 
 export interface SubtitleConfig {

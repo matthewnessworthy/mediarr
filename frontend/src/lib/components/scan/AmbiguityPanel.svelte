@@ -4,7 +4,7 @@
 	import MediaBadge from './MediaBadge.svelte';
 	import { Loader2 } from '@lucide/svelte';
 
-	const ALL_MEDIA_TYPES: MediaType[] = ['Movie', 'Series', 'Anime'];
+	const ALL_MEDIA_TYPES: MediaType[] = ['Movie', 'Series'];
 
 	const {
 		currentInfo,

@@ -183,7 +183,6 @@ fn validate_field(key: &str, val: &str) -> anyhow::Result<()> {
         let media_type = match leaf {
             "movie" => Some(MediaType::Movie),
             "series" => Some(MediaType::Series),
-            "anime" => Some(MediaType::Anime),
             _ => None,
         };
 

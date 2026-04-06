@@ -52,7 +52,6 @@ export function mockConfig(overrides: Partial<Config> = {}): Config {
 		templates: {
 			movie: '{title} ({year})/{title} ({year}).{ext}',
 			series: '{title}/Season {season:02}/{title} - S{season:02}E{episode:02}.{ext}',
-			anime: '{title}/{title} - {episode:02}.{ext}',
 		},
 		subtitles: {
 			enabled: true,

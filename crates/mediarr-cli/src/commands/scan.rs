@@ -23,7 +23,6 @@ pub async fn execute(args: ScanArgs) -> anyhow::Result<()> {
         let media_type = match media_type_str.as_str() {
             "movie" => MediaType::Movie,
             "series" => MediaType::Series,
-            "anime" => MediaType::Anime,
             _ => unreachable!("clap validates this"),
         };
         let filter = ScanFilter {

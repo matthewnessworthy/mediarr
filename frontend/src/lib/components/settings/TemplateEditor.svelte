@@ -51,21 +51,6 @@
 			language: 'en',
 			confidence: 'High',
 		},
-		Anime: {
-			title: 'Steins Gate',
-			media_type: 'Anime',
-			year: 2011,
-			season: 1,
-			episodes: [12],
-			resolution: '1080p',
-			video_codec: 'x265',
-			audio_codec: 'FLAC',
-			source: 'BluRay',
-			release_group: 'SubsPlease',
-			container: 'mkv',
-			language: 'ja',
-			confidence: 'High',
-		},
 	};
 
 	const AVAILABLE_VARIABLES = [

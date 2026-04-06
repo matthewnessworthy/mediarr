@@ -9,13 +9,12 @@ test.describe('Settings View', () => {
 		await expect(page.getByText('Configure templates, subtitles, and preferences')).toBeVisible();
 	});
 
-	test('shows template editors for movie, series, and anime', async ({ page }) => {
+	test('shows template editors for movie and series', async ({ page }) => {
 		await gotoWithMocks(page, '/settings');
 
-		// Three template sections should be present
+		// Two template sections should be present
 		await expect(page.getByText('Movie Template')).toBeVisible();
 		await expect(page.getByText('Series Template')).toBeVisible();
-		await expect(page.getByText('Anime Template')).toBeVisible();
 	});
 
 	test('template inputs contain default template values', async ({ page }) => {

@@ -386,7 +386,6 @@ impl Scanner {
         match media_type {
             MediaType::Movie => &self.config.templates.movie,
             MediaType::Series => &self.config.templates.series,
-            MediaType::Anime => &self.config.templates.anime,
         }
     }
 }

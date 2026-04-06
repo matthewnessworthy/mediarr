@@ -9,15 +9,9 @@
 //! - [`parse_with_context`] — parse with sibling filenames for better title detection.
 
 use hunch::{hunch as hunch_parse, hunch_with_context as hunch_ctx, Property};
-use regex::Regex;
-use std::sync::LazyLock;
 
 use crate::error::{MediError, Result};
 use crate::types::{MediaInfo, MediaType, ParseConfidence};
-
-/// Regex for CRC32 hash pattern: exactly 8 hex chars in square brackets.
-static CRC32_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[[0-9A-Fa-f]{8}\]").expect("CRC32 regex"));
 
 /// Parse a single filename into [`MediaInfo`].
 ///
@@ -81,11 +75,9 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
     let (media_type, type_was_inferred) = match hunch_media_type {
         Some(hunch::MediaType::Movie) => (MediaType::Movie, false),
         Some(hunch::MediaType::Episode) => {
-            if is_anime_filename(original_filename, &title, release_group.as_deref()) {
-                (MediaType::Anime, false)
-            } else {
-                (MediaType::Series, false)
-            }
+            // Anime and Series are treated as the same category ("Series").
+            // Anime-style filenames use the series template.
+            (MediaType::Series, false)
         }
         Some(hunch::MediaType::Extra) => (MediaType::Series, false),
         None => {
@@ -112,12 +104,12 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
         .map(|s| s.to_owned())
         .unwrap_or_else(|| extract_extension(original_filename));
 
-    // Default season to 1 for Series/Anime when episodes are present but season
+    // Default season to 1 for Series when episodes are present but season
     // is missing.  Files like "Show.E05.mkv" omit the season prefix; treating
     // them as season 1 prevents the template from producing "SE05" instead of
     // "S01E05".
     let season = match (&media_type, season, episodes.is_empty()) {
-        (MediaType::Series | MediaType::Anime, None, false) => Some(1),
+        (MediaType::Series, None, false) => Some(1),
         _ => season,
     };
 
@@ -152,21 +144,6 @@ fn safe_i32_to_u16(value: Option<i32>, field_name: &str, filename: &str) -> Opti
             None
         }
     })
-}
-
-/// Detect anime filenames by bracket/CRC patterns.
-///
-/// Checks for:
-/// 1. Bracket-enclosed group at start of filename (e.g. `[SubGroup] Naruto...`)
-/// 2. CRC32 hash pattern anywhere in filename (e.g. `[ABCD1234]`)
-fn is_anime_filename(filename: &str, _title: &str, _group: Option<&str>) -> bool {
-    // Check for bracket-enclosed group at start
-    if filename.starts_with('[') {
-        return true;
-    }
-
-    // Check for CRC32 hash pattern: [8 hex chars]
-    CRC32_RE.is_match(filename)
 }
 
 /// Infer media type from available fields when hunch doesn't provide one.
@@ -236,15 +213,15 @@ mod tests {
     // ── Anime detection tests ──
 
     #[test]
-    fn detect_anime_bracket_group() {
+    fn detect_anime_bracket_group_maps_to_series() {
         let info = parse_filename("[SubGroup] Naruto - 01 [1080p].mkv").unwrap();
-        assert_eq!(info.media_type, MediaType::Anime);
+        assert_eq!(info.media_type, MediaType::Series);
     }
 
     #[test]
-    fn detect_anime_crc32() {
+    fn detect_anime_crc32_maps_to_series() {
         let info = parse_filename("[SubGroup] Naruto - 01 [ABCD1234].mkv").unwrap();
-        assert_eq!(info.media_type, MediaType::Anime);
+        assert_eq!(info.media_type, MediaType::Series);
     }
 
     // ── Multi-episode tests ──
@@ -357,31 +334,6 @@ mod tests {
         assert_eq!(confidence, ParseConfidence::Low);
     }
 
-    // ── Anime detection unit tests ──
-
-    #[test]
-    fn anime_bracket_start() {
-        assert!(is_anime_filename("[Group] Title", "Title", Some("Group")));
-    }
-
-    #[test]
-    fn anime_crc32_pattern() {
-        assert!(is_anime_filename(
-            "Title - 01 [DEADBEEF].mkv",
-            "Title",
-            None
-        ));
-    }
-
-    #[test]
-    fn not_anime_regular_series() {
-        assert!(!is_anime_filename(
-            "The.Office.S02E03.mkv",
-            "The Office",
-            None
-        ));
-    }
-
     // ── Extension extraction ──
 
     #[test]
@@ -453,4 +405,5 @@ mod tests {
         let info = parse_filename("Inception.2010.1080p.BluRay.mkv").unwrap();
         assert_eq!(info.season, None);
     }
+
 }

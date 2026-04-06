@@ -7,7 +7,6 @@
 	const variants: Record<MediaType, string> = {
 		Series: 'bg-blue-500/15 text-blue-400',
 		Movie: 'bg-emerald-500/15 text-emerald-400',
-		Anime: 'bg-purple-500/15 text-purple-400',
 	};
 </script>
 
