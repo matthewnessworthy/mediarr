@@ -5,7 +5,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '$lib/components/ui/tooltip';
 	import RenameDetail from './RenameDetail.svelte';
-	import type { BatchSummary, UndoEligibility, RenameResult } from '$lib/types';
+	import type { BatchSummary, UndoEligibility, RenameResult, RenameRecord } from '$lib/types';
 
 	const {
 		batch,
@@ -22,6 +22,27 @@
 	} = $props();
 
 	let undoing = $state(false);
+	let entries = $state<RenameRecord[]>([]);
+	let loadingEntries = $state(false);
+	let entriesLoaded = $state(false);
+
+	$effect(() => {
+		if (expanded && !entriesLoaded && !loadingEntries) {
+			fetchEntries();
+		}
+	});
+
+	async function fetchEntries() {
+		loadingEntries = true;
+		try {
+			entries = await invoke<RenameRecord[]>('get_batch', { batchId: batch.batch_id });
+			entriesLoaded = true;
+		} catch (e) {
+			console.error(`Failed to load batch ${batch.batch_id}:`, e);
+		} finally {
+			loadingEntries = false;
+		}
+	}
 
 	function formatTimestamp(iso: string): string {
 		const date = new Date(iso);
@@ -121,9 +142,20 @@
 
 	<div class={cn('expandable', expanded && 'expanded')}>
 		<div>
-			{#if batch.entries.length > 0}
+			{#if loadingEntries}
+				<div class="px-1 pb-3 pl-4 space-y-2">
+					{#each { length: Math.min(batch.file_count, 3) } as _}
+						<div class="flex items-center gap-3 py-1.5">
+							<div class="skeleton h-3 w-12"></div>
+							<div class="skeleton h-3 w-40"></div>
+							<div class="skeleton h-3 w-4"></div>
+							<div class="skeleton h-3 w-40"></div>
+						</div>
+					{/each}
+				</div>
+			{:else if entries.length > 0}
 				<div class="px-1 pb-3 pl-4">
-					{#each batch.entries as record}
+					{#each entries as record}
 						<RenameDetail {record} />
 					{/each}
 				</div>

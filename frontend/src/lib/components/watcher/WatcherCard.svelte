@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Switch } from '$lib/components/ui/switch';
 	import { Trash2 } from '@lucide/svelte';
 	import type { WatcherConfig } from '$lib/types';
 
@@ -61,20 +62,12 @@
 			{watcher.mode === 'auto' ? 'Auto-rename' : 'Queue for review'}
 		</Badge>
 
-		<button
-			type="button"
-			role="switch"
-			aria-checked={active}
+		<Switch
+			checked={active}
+			onCheckedChange={(checked: boolean) => handleToggle(checked)}
 			disabled={toggling}
-			class="shrink-0 relative inline-flex h-5 w-9 items-center rounded-full border border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 {active ? 'bg-primary' : 'bg-input'}"
-			style="transition-duration: var(--duration-normal);"
-			onclick={() => handleToggle(!active)}
-		>
-			<span
-				class="pointer-events-none block size-4 rounded-full bg-background shadow-sm transition-transform {active ? 'translate-x-4' : 'translate-x-0'}"
-				style="transition-duration: var(--duration-fast);"
-			></span>
-		</button>
+			size="sm"
+		/>
 
 		<button
 			type="button"

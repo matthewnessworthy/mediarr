@@ -339,6 +339,17 @@ impl HistoryDb {
         Ok(results)
     }
 
+    /// Clear all rename history entries from the database.
+    ///
+    /// Deletes every row in the `rename_history` table. This is irreversible.
+    pub fn clear_history(&self) -> Result<usize> {
+        let deleted = self
+            .conn
+            .execute("DELETE FROM rename_history", [])?;
+        info!(deleted, "cleared rename history");
+        Ok(deleted)
+    }
+
     // -----------------------------------------------------------------------
     // Watcher event methods
     // -----------------------------------------------------------------------

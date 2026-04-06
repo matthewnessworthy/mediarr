@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import { Clock } from '@lucide/svelte';
+	import { Clock, Trash2 } from '@lucide/svelte';
 	import { historyState } from '$lib/state/history.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import BatchCard from '$lib/components/history/BatchCard.svelte';
 	import type { BatchSummary, UndoEligibility } from '$lib/types';
+
+	let clearing = $state(false);
 
 	async function loadBatches() {
 		historyState.loading = true;
@@ -25,18 +28,46 @@
 		}
 	}
 
+	async function clearHistory() {
+		clearing = true;
+		try {
+			await invoke('clear_history');
+			historyState.batches = [];
+			historyState.undoEligibility = new Map();
+			historyState.expandedBatchIds = new Set();
+		} catch (e) {
+			console.error('Failed to clear history:', e);
+		} finally {
+			clearing = false;
+		}
+	}
+
 	onMount(() => {
 		loadBatches();
 	});
 </script>
 
 <div class="p-8">
-	<div class="mb-6 flex items-baseline gap-3">
-		<h2 class="text-lg font-medium text-foreground">History</h2>
+	<div class="mb-6 flex items-center justify-between">
+		<div class="flex items-baseline gap-3">
+			<h2 class="text-lg font-medium text-foreground">History</h2>
+			{#if historyState.batches.length > 0}
+				<span class="text-xs text-muted-foreground">
+					{historyState.batches.length} batch{historyState.batches.length === 1 ? '' : 'es'}
+				</span>
+			{/if}
+		</div>
 		{#if historyState.batches.length > 0}
-			<span class="text-xs text-muted-foreground">
-				{historyState.batches.length} batch{historyState.batches.length === 1 ? '' : 'es'}
-			</span>
+			<Button
+				variant="ghost"
+				size="sm"
+				disabled={clearing}
+				onclick={clearHistory}
+				class="text-muted-foreground hover:text-destructive"
+			>
+				<Trash2 class="size-3.5" />
+				{clearing ? 'Clearing...' : 'Clear history'}
+			</Button>
 		{/if}
 	</div>
 

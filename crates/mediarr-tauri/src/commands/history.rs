@@ -1,6 +1,6 @@
 use tauri::State;
 
-use mediarr_core::{BatchSummary, RenameResult, UndoEligibility};
+use mediarr_core::{BatchSummary, RenameRecord, RenameResult, UndoEligibility};
 
 use crate::error::{CommandError, CommandResult};
 use crate::state::ManagedState;
@@ -14,6 +14,27 @@ pub fn list_batches(
     let state = state.lock().map_err(|_| CommandError::StateLock)?;
     let batches = state.db.list_batches(limit.map(|l| l as usize))?;
     Ok(batches)
+}
+
+/// Get all rename records for a specific batch.
+#[tauri::command]
+pub fn get_batch(
+    state: State<'_, ManagedState>,
+    batch_id: String,
+) -> CommandResult<Vec<RenameRecord>> {
+    let state = state.lock().map_err(|_| CommandError::StateLock)?;
+    let records = state.db.get_batch(&batch_id)?;
+    Ok(records)
+}
+
+/// Clear all rename history.
+#[tauri::command]
+pub fn clear_history(
+    state: State<'_, ManagedState>,
+) -> CommandResult<usize> {
+    let state = state.lock().map_err(|_| CommandError::StateLock)?;
+    let deleted = state.db.clear_history()?;
+    Ok(deleted)
 }
 
 /// Check whether a rename batch is eligible for undo.
