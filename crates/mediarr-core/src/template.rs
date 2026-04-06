@@ -908,6 +908,97 @@ mod tests {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // {Title} variable: Title Case rendering
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn render_title_case_lowercase_input() {
+        let engine = super::TemplateEngine::new();
+        let mut info = series_info();
+        info.title = "the office".to_string();
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        assert_eq!(result, PathBuf::from("The Office.mkv"));
+    }
+
+    #[test]
+    fn render_title_case_uppercase_input() {
+        let engine = super::TemplateEngine::new();
+        let mut info = movie_info();
+        info.title = "INCEPTION".to_string();
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        assert_eq!(result, PathBuf::from("Inception.mkv"));
+    }
+
+    #[test]
+    fn render_title_case_already_correct() {
+        let engine = super::TemplateEngine::new();
+        let info = series_info(); // title is "The Office"
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        assert_eq!(result, PathBuf::from("The Office.mkv"));
+    }
+
+    #[test]
+    fn render_title_lowercase_still_works() {
+        // Backward compat: {title} unchanged
+        let engine = super::TemplateEngine::new();
+        let mut info = movie_info();
+        info.title = "the office".to_string();
+        let result = engine.render("{title}.{ext}", &info).unwrap();
+        assert_eq!(result, PathBuf::from("the office.mkv"));
+    }
+
+    #[test]
+    fn validate_title_case_satisfies_movie_title_requirement() {
+        let engine = super::TemplateEngine::new();
+        let warnings = engine.validate("{Title} ({year}).{ext}", &MediaType::Movie);
+        assert!(
+            !warnings.iter().any(|w| w.variable == "title"),
+            "expected no title warning when {{Title}} is used, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn validate_title_case_satisfies_series_title_requirement() {
+        let engine = super::TemplateEngine::new();
+        let warnings = engine.validate(
+            "{Title} - S{season:02}E{episode:02}.{ext}",
+            &MediaType::Series,
+        );
+        assert!(
+            !warnings.iter().any(|w| w.variable == "title"),
+            "expected no title warning when {{Title}} is used, got: {:?}",
+            warnings
+        );
+    }
+
+    #[test]
+    fn render_default_movie_template_title_case() {
+        let engine = super::TemplateEngine::new();
+        let mut info = movie_info();
+        info.title = "the dark knight".to_string();
+        let result = engine
+            .render("{Title} ({year})/{Title} ({year}).{ext}", &info)
+            .unwrap();
+        let expected = PathBuf::from("The Dark Knight (2010)")
+            .join("The Dark Knight (2010).mkv");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn render_default_series_template_title_case() {
+        let engine = super::TemplateEngine::new();
+        let mut info = series_info();
+        info.title = "the office".to_string();
+        let result = engine
+            .render("{Title}/{Title} - S{season:02}E{episode:02}.{ext}", &info)
+            .unwrap();
+        let expected = PathBuf::from("The Office")
+            .join("The Office - S02E03.mkv");
+        assert_eq!(result, expected);
+    }
+
     #[test]
     fn render_rejects_dot_component() {
         let engine = super::TemplateEngine::new();
