@@ -119,11 +119,25 @@ export interface TemplateWarning {
 // Watcher types
 // ---------------------------------------------------------------------------
 
+export interface WatcherSettings {
+	output_dir?: string | null;
+	operation?: RenameOperation | null;
+	conflict_strategy?: ConflictStrategy | null;
+	create_directories?: boolean | null;
+	movie_template?: string | null;
+	series_template?: string | null;
+	anime_template?: string | null;
+	subtitles_enabled?: boolean | null;
+	preferred_languages?: string[] | null;
+	non_preferred_action?: NonPreferredAction | null;
+}
+
 export interface WatcherConfig {
 	path: string;
 	mode: WatcherMode;
 	active: boolean;
 	debounce_seconds: number;
+	settings?: WatcherSettings | null;
 }
 
 export interface WatcherEvent {
