@@ -51,7 +51,7 @@
 	}
 </script>
 
-<div class="border-b border-border/50 last:border-b-0 py-3 px-1 transition-colors hover:bg-accent/10" style="transition-duration: var(--duration-fast);">
+<div class="border-b border-border/50 last:border-b-0 py-3 px-4 transition-colors hover:bg-accent/10" style="transition-duration: var(--duration-fast);">
 	<div class="flex items-center gap-3">
 		<span
 			class="size-2 shrink-0 rounded-full transition-colors {active ? 'bg-green-500' : 'bg-muted-foreground/30'}"

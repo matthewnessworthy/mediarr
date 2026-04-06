@@ -168,7 +168,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="p-8 min-h-full transition-colors {dragOver ? 'bg-accent/10' : ''}"
+	class="p-8 max-w-4xl min-h-full transition-colors {dragOver ? 'bg-accent/10' : ''}"
 	style="transition-duration: var(--duration-normal);"
 	ondragover={(e) => { e.preventDefault(); dragOver = true; }}
 	ondragleave={() => (dragOver = false)}
@@ -211,14 +211,14 @@
 			</p>
 		</div>
 	{:else}
-		<div class="mb-8">
+		<div class="mb-10">
 			{#each watcherState.watchers as watcher (watcher.path)}
 				<WatcherCard {watcher} eventCounts={eventCountsFor(watcher.path)} onRemove={removeWatcher} onToggled={loadWatchers} onEdit={openEditDialog} />
 			{/each}
 		</div>
 
 		{#if watcherState.reviewQueue.filter(e => e.status === 'pending').length > 0}
-			<div class="mb-8">
+			<div class="mb-10">
 				<h3 class="mb-3 text-sm font-medium text-muted-foreground">Review Queue</h3>
 				<ReviewQueue
 					entries={watcherState.reviewQueue.filter(e => e.status === 'pending')}

@@ -79,7 +79,7 @@
 		type="button"
 		onclick={onToggle}
 		aria-expanded={expanded}
-		class="flex w-full items-center gap-4 px-1 py-3 text-left transition-colors hover:bg-accent/20 focus-ring"
+		class="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-accent/20 focus-ring"
 		style="transition-duration: var(--duration-fast);"
 	>
 		<div class="flex-1 min-w-0">
@@ -143,7 +143,7 @@
 	<div class={cn('expandable', expanded && 'expanded')}>
 		<div>
 			{#if loadingEntries}
-				<div class="px-1 pb-3 pl-4 space-y-2">
+				<div class="px-4 pb-3 space-y-2">
 					{#each { length: Math.min(batch.file_count, 3) } as _}
 						<div class="flex items-center gap-3 py-1.5">
 							<div class="skeleton h-3 w-12"></div>
@@ -154,7 +154,7 @@
 					{/each}
 				</div>
 			{:else if entries.length > 0}
-				<div class="px-1 pb-3 pl-4">
+				<div class="px-4 pb-3">
 					{#each entries as record}
 						<RenameDetail {record} />
 					{/each}

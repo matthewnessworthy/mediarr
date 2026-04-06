@@ -47,7 +47,7 @@
 	});
 </script>
 
-<div class="p-8">
+<div class="p-8 max-w-4xl">
 	<div class="mb-6 flex items-center justify-between">
 		<div class="flex items-baseline gap-3">
 			<h2 class="text-lg font-medium text-foreground">History</h2>

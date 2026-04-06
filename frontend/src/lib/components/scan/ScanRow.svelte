@@ -119,70 +119,71 @@
 		<button
 			type="button"
 			aria-expanded={expanded}
-			class="flex flex-1 min-w-0 flex-col gap-0.5 px-4 py-1.5 text-left hover:bg-accent/20 transition-colors focus-ring"
+			class="flex flex-1 min-w-0 items-start gap-2 px-4 py-1.5 text-left hover:bg-accent/20 transition-colors focus-ring"
 			style="transition-duration: var(--duration-fast);"
 			onclick={handleRowClick}
 		>
-			<!-- Line 1: title row -->
-			<div class="flex items-center gap-2 min-w-0">
-				<!-- Checkbox -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div onclick={handleCheckboxClick}>
-					<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
-				</div>
-
-				<!-- Expand indicator -->
-				<ChevronRight
-					class={cn(
-						'size-3.5 shrink-0 text-muted-foreground/60 transition-transform',
-						expanded && 'rotate-90'
-					)}
-					style="transition-duration: var(--duration-fast);"
-				/>
-
-				<!-- Media type badge -->
-				{#if isCollision}
-					<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-rose-500/15 text-rose-400">
-						<TriangleAlert class="size-3" />
-						Collision
-					</span>
-					{#if conflictGroup}
-						<span class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-rose-400/70 bg-rose-500/8">
-							<Link class="size-2.5" />
-							{conflictGroup.groupSize}
-						</span>
-					{/if}
-					<MediaBadge mediaType={result.media_info.media_type} />
-				{:else if isAmbiguous}
-					<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-amber-500/15 text-amber-400">
-						Ambiguous
-					</span>
-				{:else}
-					<MediaBadge mediaType={result.media_info.media_type} />
-				{/if}
-
-				<!-- Output filename -->
-				<span class="flex-1 min-w-0 break-all font-medium text-sm text-foreground">
-					{outputDisplay}
-				</span>
-
-				<!-- Metadata pills (hidden at narrow widths via overflow) -->
-				<div class="hidden sm:block min-w-0">
-					<MetadataPills mediaInfo={result.media_info} />
-				</div>
-
-				<!-- Subtitle count (hidden at narrow widths) -->
-				{#if result.subtitles.length > 0}
-					<span class="hidden sm:inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/40">
-						{result.subtitles.length} sub{result.subtitles.length !== 1 ? 's' : ''}
-					</span>
-				{/if}
+			<!-- Checkbox -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="mt-0.5" onclick={handleCheckboxClick}>
+				<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
 			</div>
 
-			<!-- Line 2: source filename -->
-			<div class="flex items-center gap-2 pl-[1.85rem] sm:pl-[2.15rem] min-w-0">
-				<span class="break-all font-mono text-[11px] text-muted-foreground min-w-0 flex-1" title={result.source_path}>
+			<!-- Expand indicator -->
+			<ChevronRight
+				class={cn(
+					'size-3.5 shrink-0 mt-0.5 text-muted-foreground/60 transition-transform',
+					expanded && 'rotate-90'
+				)}
+				style="transition-duration: var(--duration-fast);"
+			/>
+
+			<!-- Content column: title + source filename aligned together -->
+			<div class="flex-1 min-w-0 flex flex-col gap-0.5">
+				<!-- Line 1: title row -->
+				<div class="flex items-center gap-2 min-w-0">
+					<!-- Media type badge -->
+					{#if isCollision}
+						<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-rose-500/15 text-rose-400">
+							<TriangleAlert class="size-3" />
+							Collision
+						</span>
+						{#if conflictGroup}
+							<span class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium text-rose-400/70 bg-rose-500/8">
+								<Link class="size-2.5" />
+								{conflictGroup.groupSize}
+							</span>
+						{/if}
+						<MediaBadge mediaType={result.media_info.media_type} />
+					{:else if isAmbiguous}
+						<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide bg-amber-500/15 text-amber-400">
+							Ambiguous
+						</span>
+					{:else}
+						<MediaBadge mediaType={result.media_info.media_type} />
+					{/if}
+
+					<!-- Output filename -->
+					<span class="flex-1 min-w-0 break-all font-medium text-sm text-foreground">
+						{outputDisplay}
+					</span>
+
+					<!-- Metadata pills (hidden at narrow widths via overflow) -->
+					<div class="hidden sm:block min-w-0">
+						<MetadataPills mediaInfo={result.media_info} />
+					</div>
+
+					<!-- Subtitle count (hidden at narrow widths) -->
+					{#if result.subtitles.length > 0}
+						<span class="hidden sm:inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/40">
+							{result.subtitles.length} sub{result.subtitles.length !== 1 ? 's' : ''}
+						</span>
+					{/if}
+				</div>
+
+				<!-- Line 2: source filename -->
+				<span class="break-all font-mono text-[11px] text-muted-foreground min-w-0" title={result.source_path}>
 					{expanded ? result.source_path : basename(result.source_path)}
 				</span>
 			</div>
