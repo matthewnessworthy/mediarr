@@ -53,21 +53,26 @@
 		},
 	};
 
-	const AVAILABLE_VARIABLES = [
-		{ name: '{title}', desc: 'Media title' },
-		{ name: '{year}', desc: 'Release year' },
-		{ name: '{season}', desc: 'Season number' },
-		{ name: '{season:02}', desc: 'Season, zero-padded' },
-		{ name: '{episode}', desc: 'Episode number' },
-		{ name: '{episode:02}', desc: 'Episode, zero-padded' },
-		{ name: '{resolution}', desc: 'e.g. 1080p, 720p' },
-		{ name: '{video_codec}', desc: 'Video codec' },
-		{ name: '{audio_codec}', desc: 'Audio codec' },
-		{ name: '{source}', desc: 'e.g. BluRay, WEB-DL' },
-		{ name: '{release_group}', desc: 'Release group' },
-		{ name: '{language}', desc: 'Content language' },
-		{ name: '{ext}', desc: 'File extension' },
+	const AVAILABLE_VARIABLES: Array<{ name: string; desc: string; types: MediaType[] | null }> = [
+		{ name: '{title}', desc: 'Media title (original case)', types: null },
+		{ name: '{Title}', desc: 'Media title (Title Case)', types: null },
+		{ name: '{year}', desc: 'Release year', types: null },
+		{ name: '{season}', desc: 'Season number', types: ['Series'] },
+		{ name: '{season:02}', desc: 'Season, zero-padded', types: ['Series'] },
+		{ name: '{episode}', desc: 'Episode number', types: ['Series'] },
+		{ name: '{episode:02}', desc: 'Episode, zero-padded', types: ['Series'] },
+		{ name: '{resolution}', desc: 'e.g. 1080p, 720p', types: null },
+		{ name: '{video_codec}', desc: 'Video codec', types: null },
+		{ name: '{audio_codec}', desc: 'Audio codec', types: null },
+		{ name: '{source}', desc: 'e.g. BluRay, WEB-DL', types: null },
+		{ name: '{release_group}', desc: 'Release group', types: null },
+		{ name: '{language}', desc: 'Content language', types: null },
+		{ name: '{ext}', desc: 'File extension', types: null },
 	];
+
+	let filteredVariables = $derived(
+		AVAILABLE_VARIABLES.filter((v) => v.types === null || v.types.includes(mediaType))
+	);
 
 	async function updatePreview() {
 		if (!template) {
@@ -148,7 +153,7 @@
 		</Collapsible.Trigger>
 		<Collapsible.Content>
 			<div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-				{#each AVAILABLE_VARIABLES as v}
+				{#each filteredVariables as v}
 					<div class="flex items-baseline gap-2 text-xs">
 						<code class="font-mono text-foreground/80">{v.name}</code>
 						<span class="text-muted-foreground">{v.desc}</span>
