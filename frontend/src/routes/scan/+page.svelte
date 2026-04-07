@@ -158,6 +158,14 @@
 		return entries;
 	}
 
+	function handleClearAll() {
+		scanState.clearAll();
+		expandedPaths = new Set();
+		scanError = null;
+		renameResults = null;
+		executing = false;
+	}
+
 	async function handleApplyRenames() {
 		executing = true;
 		renameResults = null;
@@ -253,8 +261,10 @@
 		<!-- Bottom bar with selection and actions -->
 		<ScanBottomBar
 			onApplyRenames={handleApplyRenames}
+			onClearAll={handleClearAll}
 			{renameResults}
 			{executing}
+			{hasResults}
 		/>
 	{:else}
 		<!-- Empty state -->
