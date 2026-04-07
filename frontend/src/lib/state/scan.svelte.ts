@@ -65,12 +65,14 @@ class ScanState {
 	}
 
 	get counts() {
-		const all = this.results.length;
-		const series = this.results.filter((r) => r.media_info.media_type === 'Series').length;
-		const movies = this.results.filter((r) => r.media_info.media_type === 'Movie').length;
-		const ambiguous = this.results.filter((r) => r.status === 'Ambiguous').length;
-		const collisions = this.results.filter((r) => r.status === 'Conflict').length;
-		return { all, series, movies, ambiguous, collisions };
+		let series = 0, movies = 0, ambiguous = 0, collisions = 0;
+		for (const r of this.results) {
+			if (r.media_info.media_type === 'Series') series++;
+			else if (r.media_info.media_type === 'Movie') movies++;
+			if (r.status === 'Ambiguous') ambiguous++;
+			else if (r.status === 'Conflict') collisions++;
+		}
+		return { all: this.results.length, series, movies, ambiguous, collisions };
 	}
 
 	/**

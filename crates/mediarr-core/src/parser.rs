@@ -182,7 +182,10 @@ fn map_confidence(hunch_confidence: hunch::Confidence, type_was_inferred: bool) 
 fn extract_extension(filename: &str) -> String {
     // Strip any path components first
     let basename = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
-    basename.rsplit('.').next().unwrap_or("").to_lowercase()
+    match basename.rfind('.') {
+        Some(pos) => basename[pos + 1..].to_lowercase(),
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -348,7 +351,7 @@ mod tests {
 
     #[test]
     fn extract_extension_no_extension() {
-        assert_eq!(extract_extension("noext"), "noext");
+        assert_eq!(extract_extension("noext"), "");
     }
 
     // ── Edge cases ──

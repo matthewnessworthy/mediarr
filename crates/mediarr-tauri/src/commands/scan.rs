@@ -12,8 +12,8 @@ use crate::state::ManagedState;
 /// Scan a folder for media files and return all results at once.
 #[tauri::command]
 pub fn scan_folder(state: State<'_, ManagedState>, path: String) -> CommandResult<Vec<ScanResult>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let scanner = Scanner::new(state.config.clone());
+    let config = state.lock().map_err(|_| CommandError::StateLock)?.config.clone();
+    let scanner = Scanner::new(config);
     let results = scanner.scan_folder(Path::new(&path))?;
     Ok(results)
 }
@@ -28,8 +28,8 @@ pub fn scan_files(
     state: State<'_, ManagedState>,
     paths: Vec<String>,
 ) -> CommandResult<Vec<ScanResult>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let scanner = Scanner::new(state.config.clone());
+    let config = state.lock().map_err(|_| CommandError::StateLock)?.config.clone();
+    let scanner = Scanner::new(config);
     let mut results = Vec::new();
     for p in &paths {
         match scanner.scan_file(Path::new(p)) {
@@ -65,8 +65,8 @@ pub fn scan_folder_streaming(
     path: String,
     on_event: Channel<ScanEvent>,
 ) -> CommandResult<()> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let scanner = Scanner::new(state.config.clone());
+    let config = state.lock().map_err(|_| CommandError::StateLock)?.config.clone();
+    let scanner = Scanner::new(config);
     let results = scanner.scan_folder(Path::new(&path))?;
     let total = results.len();
     for (i, result) in results.into_iter().enumerate() {

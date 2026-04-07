@@ -29,18 +29,7 @@ const DEFAULT_MAX_EVENTS: usize = 500;
 /// Events for the same canonical path within this window are ignored.
 const DEDUP_WINDOW: Duration = Duration::from_secs(30);
 
-/// Video file extensions recognised by the watcher.
-const VIDEO_EXTENSIONS: &[&str] = &[
-    "mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "flv", "webm",
-];
-
-/// Check whether a path has a video file extension.
-pub(crate) fn is_video_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
-        .unwrap_or(false)
-}
+use crate::fs_util::is_video_file;
 
 /// Callback type invoked after each watcher event is logged to SQLite.
 type EventCallback = Box<dyn Fn(&WatcherEvent) + Send>;
@@ -409,12 +398,10 @@ impl WatcherManager {
                     let records: Vec<RenameRecord> = results
                         .iter()
                         .filter(|r| r.success)
-                        .map(|r| {
-                            let file_size = std::fs::metadata(&r.dest_path)
-                                .map(|m| m.len())
-                                .unwrap_or(0);
-                            let file_mtime = std::fs::metadata(&r.dest_path)
-                                .and_then(|m| m.modified())
+                        .filter_map(|r| {
+                            let meta = std::fs::metadata(&r.dest_path).ok()?;
+                            let file_mtime = meta
+                                .modified()
                                 .ok()
                                 .map(|t| {
                                     let dt: chrono::DateTime<chrono::Utc> = t.into();
@@ -422,15 +409,15 @@ impl WatcherManager {
                                 })
                                 .unwrap_or_default();
 
-                            RenameRecord {
+                            Some(RenameRecord {
                                 batch_id: batch_id.clone(),
                                 timestamp: timestamp.clone(),
                                 source_path: r.source_path.clone(),
                                 dest_path: r.dest_path.clone(),
                                 media_info: scan_result.media_info.clone(),
-                                file_size,
+                                file_size: meta.len(),
                                 file_mtime,
-                            }
+                            })
                         })
                         .collect();
 

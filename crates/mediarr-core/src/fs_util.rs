@@ -2,6 +2,19 @@ use std::path::Path;
 
 use crate::error::{MediError, Result};
 
+/// Video file extensions recognised by mediarr.
+pub const VIDEO_EXTENSIONS: &[&str] = &[
+    "mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "flv", "webm",
+];
+
+/// Check whether a path has a video file extension.
+pub fn is_video_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
 /// Move a file from source to dest, with EXDEV cross-filesystem fallback.
 ///
 /// On same filesystem: uses `std::fs::rename` (atomic).

@@ -127,15 +127,26 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
         let batch_id = HistoryDb::generate_batch_id();
         let timestamp = chrono::Utc::now().to_rfc3339();
 
+        // Build a lookup from source_path -> MediaInfo for history recording
+        let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> = selected
+            .iter()
+            .map(|r| (r.source_path.to_string_lossy().to_string(), r.media_info.clone()))
+            .collect();
+
         let records: Vec<RenameRecord> = succeeded
             .iter()
             .map(|r| {
-                let file_size = std::fs::metadata(&r.dest_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                let file_mtime = std::fs::metadata(&r.dest_path)
-                    .and_then(|m| m.modified())
+                let meta = std::fs::metadata(&r.dest_path).ok();
+                let file_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                let file_mtime = meta
+                    .and_then(|m| m.modified().ok())
                     .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+                    .unwrap_or_default();
+
+                let source_key = r.source_path.to_string_lossy().to_string();
+                let info = media_info_map
+                    .get(&source_key)
+                    .cloned()
                     .unwrap_or_default();
 
                 RenameRecord {
@@ -143,21 +154,7 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
                     timestamp: timestamp.clone(),
                     source_path: r.source_path.clone(),
                     dest_path: r.dest_path.clone(),
-                    media_info: mediarr_core::MediaInfo {
-                        title: String::new(),
-                        media_type: mediarr_core::MediaType::Movie,
-                        year: None,
-                        season: None,
-                        episodes: vec![],
-                        resolution: None,
-                        video_codec: None,
-                        audio_codec: None,
-                        source: None,
-                        release_group: None,
-                        container: String::new(),
-                        language: None,
-                        confidence: mediarr_core::ParseConfidence::High,
-                    },
+                    media_info: info,
                     file_size,
                     file_mtime,
                 }

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ScanResult, MediaInfo, Config } from '$lib/types';
-	import { cn } from '$lib/utils.js';
+	import { cn, basename } from '$lib/utils.js';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { invoke } from '@tauri-apps/api/core';
 	import { scanState } from '$lib/state/scan.svelte.js';
@@ -34,10 +34,6 @@
 	const isCollision = $derived(result.status === 'Conflict');
 
 	const outputDisplay = $derived(displayPath(result.proposed_path, result.source_path));
-
-	function basename(path: string): string {
-		return path.split(/[\\/]/).pop() ?? path;
-	}
 
 	function dirname(path: string): string {
 		const parts = path.split(/[\\/]/);

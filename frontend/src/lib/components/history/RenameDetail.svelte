@@ -17,9 +17,8 @@
 		return `${bytes} B`;
 	}
 
-	function filename(path: string): string {
-		return path.split('/').pop() ?? path;
-	}
+	import { basename } from '$lib/utils.js';
+	const filename = basename;
 </script>
 
 <div class="flex items-center gap-3 py-1.5 text-xs">

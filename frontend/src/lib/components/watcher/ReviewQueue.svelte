@@ -4,33 +4,12 @@
 	import { Check, X } from '@lucide/svelte';
 	import type { ReviewQueueEntry } from '$lib/types';
 
+	import { basename, truncatePath, relativeTime } from '$lib/utils.js';
+
 	const { entries, onChanged }: { entries: ReviewQueueEntry[]; onChanged: () => void } = $props();
 
 	let processing = $state<Record<number, boolean>>({});
-
-	function filename(path: string): string {
-		const parts = path.split('/');
-		return parts[parts.length - 1] || path;
-	}
-
-	function truncatePath(path: string, maxLen = 60): string {
-		if (path.length <= maxLen) return path;
-		const parts = path.split('/');
-		if (parts.length <= 3) return '...' + path.slice(-(maxLen - 3));
-		return parts[0] + '/.../' + parts.slice(-2).join('/');
-	}
-
-	function relativeTime(iso: string): string {
-		const diff = Date.now() - new Date(iso).getTime();
-		const seconds = Math.floor(diff / 1000);
-		if (seconds < 60) return 'just now';
-		const minutes = Math.floor(seconds / 60);
-		if (minutes < 60) return `${minutes} min ago`;
-		const hours = Math.floor(minutes / 60);
-		if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-		const days = Math.floor(hours / 24);
-		return `${days} day${days === 1 ? '' : 's'} ago`;
-	}
+	const filename = basename;
 
 	function isProcessing(id: number | null): boolean {
 		return id !== null && !!processing[id];

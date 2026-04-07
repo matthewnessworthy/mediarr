@@ -93,23 +93,10 @@ pub fn execute_renames(
                 .unwrap_or_default();
 
             let source_key = r.source_path.to_string_lossy().to_string();
-            let info = media_info_map.get(&source_key).cloned().unwrap_or_else(|| {
-                mediarr_core::MediaInfo {
-                    title: String::new(),
-                    media_type: mediarr_core::MediaType::Movie,
-                    year: None,
-                    season: None,
-                    episodes: vec![],
-                    resolution: None,
-                    video_codec: None,
-                    audio_codec: None,
-                    source: None,
-                    release_group: None,
-                    container: String::new(),
-                    language: None,
-                    confidence: mediarr_core::ParseConfidence::High,
-                }
-            });
+            let info = media_info_map
+                .get(&source_key)
+                .cloned()
+                .unwrap_or_default();
 
             Some(RenameRecord {
                 batch_id: batch_id.clone(),

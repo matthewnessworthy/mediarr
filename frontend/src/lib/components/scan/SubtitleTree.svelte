@@ -1,11 +1,8 @@
 <script lang="ts">
 	import type { SubtitleMatch } from '$lib/types';
+	import { basename } from '$lib/utils.js';
 
 	const { subtitles }: { subtitles: SubtitleMatch[] } = $props();
-
-	function basename(path: string): string {
-		return path.split(/[\\/]/).pop() ?? path;
-	}
 
 	function typeBadgeClass(type: string): string {
 		switch (type.toLowerCase()) {

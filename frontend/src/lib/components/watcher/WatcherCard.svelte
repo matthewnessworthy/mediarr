@@ -4,6 +4,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Trash2, Settings2 } from '@lucide/svelte';
 	import type { WatcherConfig } from '$lib/types';
+	import { truncatePath } from '$lib/utils.js';
 
 	const {
 		watcher,
@@ -26,13 +27,6 @@
 	let toggling = $state(false);
 	let toggleError = $state<string | null>(null);
 	const active = $derived(watcher.active);
-
-	function truncatePath(path: string, maxLen = 45): string {
-		if (path.length <= maxLen) return path;
-		const parts = path.split('/');
-		if (parts.length <= 3) return '...' + path.slice(-(maxLen - 3));
-		return parts[0] + '/.../' + parts.slice(-2).join('/');
-	}
 
 	async function handleToggle(checked: boolean) {
 		toggling = true;

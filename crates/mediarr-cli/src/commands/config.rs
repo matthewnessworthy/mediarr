@@ -149,11 +149,10 @@ fn validate_field(key: &str, val: &str) -> anyhow::Result<()> {
             }
         }
         "conflict_strategy" => {
-            let allowed = ["skip", "overwrite", "suffix"];
+            let allowed = ["skip", "overwrite", "numericsuffix"];
             if !allowed.contains(&val.to_lowercase().as_str()) {
                 anyhow::bail!(
-                    "invalid conflict_strategy: {val} (allowed: {})",
-                    allowed.join(", ")
+                    "invalid conflict_strategy: {val} (allowed: skip, overwrite, numericsuffix)",
                 );
             }
         }

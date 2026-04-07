@@ -246,27 +246,12 @@ fn execute_review_rename(
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let media_info: mediarr_core::MediaInfo = serde_json::from_str(&entry.media_info_json)
-        .unwrap_or_else(|_| mediarr_core::MediaInfo {
-            title: String::new(),
-            media_type: mediarr_core::MediaType::Movie,
-            year: None,
-            season: None,
-            episodes: vec![],
-            resolution: None,
-            video_codec: None,
-            audio_codec: None,
-            source: None,
-            release_group: None,
-            container: String::new(),
-            language: None,
-            confidence: mediarr_core::ParseConfidence::High,
-        });
+        .unwrap_or_default();
 
-    let file_size = std::fs::metadata(&entry.proposed_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-    let file_mtime = std::fs::metadata(&entry.proposed_path)
-        .and_then(|m| m.modified())
+    let meta = std::fs::metadata(&entry.proposed_path).ok();
+    let file_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+    let file_mtime = meta
+        .and_then(|m| m.modified().ok())
         .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
         .unwrap_or_default();
 

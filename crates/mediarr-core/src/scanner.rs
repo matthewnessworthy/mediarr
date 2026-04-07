@@ -12,15 +12,11 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::error::{MediError, Result};
+use crate::fs_util::VIDEO_EXTENSIONS;
 use crate::parser;
 use crate::subtitle::SubtitleDiscovery;
 use crate::template::TemplateEngine;
 use crate::types::{MediaType, ParseConfidence, ScanFilter, ScanResult, ScanStatus};
-
-/// Video file extensions recognised by the scanner.
-const VIDEO_EXTENSIONS: &[&str] = &[
-    "mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "flv", "webm",
-];
 
 /// Orchestrates folder scanning: parse filenames, render templates, discover
 /// subtitles, detect conflicts.
@@ -137,19 +133,8 @@ impl Scanner {
                         results.push(ScanResult {
                             source_path: video_path.clone(),
                             media_info: crate::types::MediaInfo {
-                                title: String::new(),
-                                media_type: MediaType::Movie,
-                                year: None,
-                                season: None,
-                                episodes: vec![],
-                                resolution: None,
-                                video_codec: None,
-                                audio_codec: None,
-                                source: None,
-                                release_group: None,
-                                container: String::new(),
-                                language: None,
                                 confidence: ParseConfidence::Low,
+                                ..Default::default()
                             },
                             proposed_path: PathBuf::new(),
                             subtitles: vec![],

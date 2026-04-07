@@ -7,9 +7,10 @@ use std::path::PathBuf;
 // ---------------------------------------------------------------------------
 
 /// Type of media content detected by the parser.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MediaType {
     /// Feature film.
+    #[default]
     Movie,
     /// TV series episode (includes anime).
     Series,
@@ -25,9 +26,10 @@ impl fmt::Display for MediaType {
 }
 
 /// Parser confidence in the result.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ParseConfidence {
     /// High confidence — unambiguous parse.
+    #[default]
     High,
     /// Medium confidence — reasonable guess with some ambiguity.
     Medium,
@@ -39,7 +41,7 @@ pub enum ParseConfidence {
 ///
 /// Produced by the parser module after running `hunch` over a filename.
 /// All optional fields are `None` when the parser could not extract them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MediaInfo {
     /// Extracted title of the media.
     pub title: String,

@@ -297,33 +297,15 @@ pub fn approve_review_entry(
     let timestamp = chrono::Utc::now().to_rfc3339();
 
     let media_info: mediarr_core::MediaInfo =
-        serde_json::from_str(&entry.media_info_json).unwrap_or_else(|_| {
-            mediarr_core::MediaInfo {
-                title: String::new(),
-                media_type: mediarr_core::MediaType::Movie,
-                year: None,
-                season: None,
-                episodes: vec![],
-                resolution: None,
-                video_codec: None,
-                audio_codec: None,
-                source: None,
-                release_group: None,
-                container: String::new(),
-                language: None,
-                confidence: mediarr_core::ParseConfidence::High,
-            }
-        });
+        serde_json::from_str(&entry.media_info_json).unwrap_or_default();
 
     let records: Vec<mediarr_core::RenameRecord> = results
         .iter()
         .filter(|r| r.success)
-        .map(|r| {
-            let file_size = std::fs::metadata(&r.dest_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
-            let file_mtime = std::fs::metadata(&r.dest_path)
-                .and_then(|m| m.modified())
+        .filter_map(|r| {
+            let meta = std::fs::metadata(&r.dest_path).ok()?;
+            let file_mtime = meta
+                .modified()
                 .ok()
                 .map(|t| {
                     let dt: chrono::DateTime<chrono::Utc> = t.into();
@@ -331,15 +313,15 @@ pub fn approve_review_entry(
                 })
                 .unwrap_or_default();
 
-            mediarr_core::RenameRecord {
+            Some(mediarr_core::RenameRecord {
                 batch_id: batch_id.clone(),
                 timestamp: timestamp.clone(),
                 source_path: r.source_path.clone(),
                 dest_path: r.dest_path.clone(),
                 media_info: media_info.clone(),
-                file_size,
+                file_size: meta.len(),
                 file_mtime,
-            }
+            })
         })
         .collect();
 
