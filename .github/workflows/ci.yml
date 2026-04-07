@@ -58,6 +58,9 @@ jobs:
 
       - run: npm ci
 
+      - name: SvelteKit sync
+        run: npx svelte-kit sync
+
       - name: Vitest
         run: npx vitest run
 
