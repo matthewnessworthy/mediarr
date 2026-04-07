@@ -3,6 +3,7 @@ name = "mediarr-tauri"
 version = "0.1.0"
 edition = "2021"
 description = "Tauri desktop shell for Mediarr"
+license = "GPL-3.0-only"
 
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }
