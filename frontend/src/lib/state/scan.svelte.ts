@@ -10,6 +10,7 @@ class ScanState {
 	filterStatus = $state<ScanStatus | null>(null);
 	searchQuery = $state('');
 	selectedPaths = $state<Set<string>>(new Set());
+	renamedPaths = $state<Set<string>>(new Set());
 	scanProgress = $state({ scanned: 0, total: 0 });
 	recentPaths = $state<string[]>([]);
 
@@ -35,6 +36,13 @@ class ScanState {
 		}
 
 		return filtered.sort((a, b) => {
+			const aRenamed = this.renamedPaths.has(a.source_path);
+			const bRenamed = this.renamedPaths.has(b.source_path);
+
+			// Renamed items always sort to the bottom
+			if (aRenamed && !bRenamed) return 1;
+			if (!aRenamed && bRenamed) return -1;
+
 			const aConflict = a.status === 'Conflict';
 			const bConflict = b.status === 'Conflict';
 
@@ -72,7 +80,7 @@ class ScanState {
 			if (r.status === 'Ambiguous') ambiguous++;
 			else if (r.status === 'Conflict') collisions++;
 		}
-		return { all: this.results.length, series, movies, ambiguous, collisions };
+		return { all: this.results.length, series, movies, ambiguous, collisions, renamed: this.renamedPaths.size };
 	}
 
 	/**
@@ -147,6 +155,17 @@ class ScanState {
 		this.selectedPaths = next;
 	}
 
+	markRenamed(paths: string[]) {
+		const next = new Set(this.renamedPaths);
+		const sel = new Set(this.selectedPaths);
+		for (const p of paths) {
+			next.add(p);
+			sel.delete(p);
+		}
+		this.renamedPaths = next;
+		this.selectedPaths = sel;
+	}
+
 	selectAll() {
 		// Collect all source_paths that are in any conflict group
 		const conflictPaths = new Set<string>();
@@ -155,10 +174,10 @@ class ScanState {
 				conflictPaths.add(p);
 			}
 		}
-		// Select all filtered results EXCEPT those in conflict groups
+		// Select all filtered results EXCEPT those in conflict groups or already renamed
 		this.selectedPaths = new Set(
 			this.filteredResults
-				.filter((r) => !conflictPaths.has(r.source_path))
+				.filter((r) => !conflictPaths.has(r.source_path) && !this.renamedPaths.has(r.source_path))
 				.map((r) => r.source_path)
 		);
 	}
@@ -208,6 +227,7 @@ class ScanState {
 		this.filterStatus = null;
 		this.searchQuery = '';
 		this.selectedPaths = new Set();
+		this.renamedPaths = new Set();
 		this.scanProgress = { scanned: 0, total: 0 };
 	}
 }
