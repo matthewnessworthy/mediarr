@@ -69,39 +69,42 @@ test.describe('History View', () => {
 	});
 
 	test('batch card expands to show rename details', async ({ page }) => {
+		const entries = [
+			{
+				batch_id: 'batch-001',
+				timestamp: new Date().toISOString(),
+				source_path: '/media/Old.Name.mkv',
+				dest_path: '/output/New Name/New Name.mkv',
+				media_info: {
+					title: 'New Name',
+					media_type: 'Movie',
+					year: 2024,
+					season: null,
+					episodes: [],
+					resolution: '1080p',
+					video_codec: 'x264',
+					audio_codec: null,
+					source: 'BluRay',
+					release_group: 'GROUP',
+					container: 'mkv',
+					language: null,
+					confidence: 'High',
+				},
+				file_size: 1500000000,
+				file_mtime: new Date().toISOString(),
+			},
+		];
+
 		await gotoWithMocks(page, '/history', {
 			list_batches: [
 				{
 					batch_id: 'batch-001',
 					timestamp: new Date().toISOString(),
 					file_count: 1,
-					entries: [
-						{
-							batch_id: 'batch-001',
-							timestamp: new Date().toISOString(),
-							source_path: '/media/Old.Name.mkv',
-							dest_path: '/output/New Name/New Name.mkv',
-							media_info: {
-								title: 'New Name',
-								media_type: 'Movie',
-								year: 2024,
-								season: null,
-								episodes: [],
-								resolution: '1080p',
-								video_codec: 'x264',
-								audio_codec: null,
-								source: 'BluRay',
-								release_group: 'GROUP',
-								container: 'mkv',
-								language: null,
-								confidence: 'High',
-							},
-							file_size: 1500000000,
-							file_mtime: new Date().toISOString(),
-						},
-					],
+					entries: [],
 				},
 			],
+			get_batch: entries,
 			check_undo: { eligible: true, batch_id: 'batch-001', ineligible_reasons: [] },
 		});
 

@@ -9,7 +9,7 @@ test.describe('Watcher View', () => {
 		});
 
 		await expect(page.getByText('No folders being watched')).toBeVisible();
-		await expect(page.getByText('Add a folder to start monitoring')).toBeVisible();
+		await expect(page.getByText('click Add Folder to start monitoring')).toBeVisible();
 	});
 
 	test('displays watcher cards with path and mode', async ({ page }) => {

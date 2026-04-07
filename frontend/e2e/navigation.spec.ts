@@ -43,12 +43,14 @@ test.describe('Navigation', () => {
 	});
 
 	test('theme toggle switches between dark and light', async ({ page }) => {
+		// Emulate dark color scheme so theme.init() picks dark mode
+		await page.emulateMedia({ colorScheme: 'dark' });
 		await gotoWithMocks(page, '/scan');
 
 		const html = page.locator('html');
 		const themeButton = page.getByRole('button', { name: 'Toggle theme' });
 
-		// Default is dark mode
+		// Default is dark mode (system preference is dark)
 		await expect(html).toHaveClass(/dark/);
 
 		// Click to switch to light mode

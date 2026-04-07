@@ -28,17 +28,20 @@ test.describe('Settings View', () => {
 	test('has subtitle discovery section with toggle', async ({ page }) => {
 		await gotoWithMocks(page, '/settings');
 
+		// Click the subtitles tab first
+		await page.getByRole('tab', { name: 'Subtitles' }).click();
+
 		// Subtitle handling section
 		await expect(page.getByText('Subtitle handling')).toBeVisible();
 		await expect(page.getByText('Discover and rename subtitle files alongside video')).toBeVisible();
 	});
 
-	test('has Naming Templates and General section headings', async ({ page }) => {
+	test('has Templates, Subtitles, and General tabs', async ({ page }) => {
 		await gotoWithMocks(page, '/settings');
 
-		await expect(page.getByText('Naming Templates')).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Subtitles' })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Templates' })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Subtitles' })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'General' })).toBeVisible();
 	});
 
 	test('save button shows Saved when no changes made', async ({ page }) => {
