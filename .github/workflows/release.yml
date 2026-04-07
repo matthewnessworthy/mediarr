@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -52,12 +53,14 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: crates/mediarr-tauri
           tagName: v__VERSION__
           releaseName: Mediarr v__VERSION__
-          releaseBody: "Automated release from main branch."
-          releaseDraft: true
+          releaseBody: "See the assets to download and install this version."
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
@@ -119,11 +122,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          TAG=$(gh release list --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName' | head -1)
-          if [ -z "$TAG" ]; then
-            echo "No draft release found"
-            exit 1
-          fi
           echo "Attaching CLI binaries to release $TAG"
           gh release upload "$TAG" release/mediarr-cli-*
