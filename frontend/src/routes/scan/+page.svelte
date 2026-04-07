@@ -11,7 +11,6 @@
 
 	let expandedPaths = $state<Set<string>>(new Set());
 	let scanError = $state<string | null>(null);
-	let renameResults = $state<RenameResult[] | null>(null);
 	let executing = $state(false);
 
 	const hasResults = $derived(scanState.results.length > 0);
@@ -37,7 +36,7 @@
 	}
 
 	const showMain = $derived(
-		scanState.results.length > 0 || scanState.loading || scanState.folderPaths.length > 0 || scanState.filePaths.length > 0
+		scanState.results.length > 0 || scanState.loading || scanState.folderPaths.length > 0 || scanState.filePaths.length > 0 || scanState.renamedPaths.size > 0
 	);
 
 	async function startScan(triggerPath?: string) {
@@ -62,7 +61,6 @@
 		scanState.searchQuery = '';
 		expandedPaths = new Set();
 		scanError = null;
-		renameResults = null;
 		scanState.loading = true;
 		scanState.folderPaths = folderPaths;
 		scanState.filePaths = filePaths;
@@ -162,21 +160,27 @@
 		scanState.clearAll();
 		expandedPaths = new Set();
 		scanError = null;
-		renameResults = null;
 		executing = false;
 	}
 
 	async function handleApplyRenames() {
 		executing = true;
-		renameResults = null;
 		try {
 			const entries = getSelectedEntries();
-			renameResults = await invoke<RenameResult[]>('execute_renames', { entries });
-			// Remove successfully renamed files from the results list
-			const succeeded = new Set(
-				renameResults.filter((r) => r.success).map((r) => r.source_path)
-			);
-			scanState.results = scanState.results.filter((r) => !succeeded.has(r.source_path));
+			const results = await invoke<RenameResult[]>('execute_renames', { entries });
+			// Collect succeeded source_paths (only video files, not subtitles)
+			const succeededPaths = results
+				.filter((r) => r.success)
+				.map((r) => r.source_path)
+				.filter((p) => scanState.results.some((r) => r.source_path === p));
+			scanState.markRenamed(succeededPaths);
+			// Report failures
+			const failed = results.filter((r) => !r.success);
+			if (failed.length > 0) {
+				scanError = failed.length === 1
+					? `Failed to rename: ${failed[0].error}`
+					: `${failed.length} files failed to rename`;
+			}
 			scanState.deselectAll();
 		} catch (e) {
 			scanError = e instanceof Error ? e.message : String(e);
@@ -250,6 +254,7 @@
 						onToggleSelect={() => scanState.toggleSelect(result.source_path)}
 						expanded={expandedPaths.has(result.source_path)}
 						onToggleExpand={() => toggleExpand(result.source_path)}
+						renamed={scanState.renamedPaths.has(result.source_path)}
 						{conflictGroup}
 						{isFirstInGroup}
 						{isLastInGroup}
@@ -262,7 +267,6 @@
 		<ScanBottomBar
 			onApplyRenames={handleApplyRenames}
 			onClearAll={handleClearAll}
-			{renameResults}
 			{executing}
 			{hasResults}
 		/>

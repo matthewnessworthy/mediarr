@@ -8,7 +8,7 @@
 	import MetadataPills from './MetadataPills.svelte';
 	import SubtitleTree from './SubtitleTree.svelte';
 	import AmbiguityPanel from './AmbiguityPanel.svelte';
-	import { ChevronRight, TriangleAlert, Link, X } from '@lucide/svelte';
+	import { ChevronRight, TriangleAlert, Link, X, Check } from '@lucide/svelte';
 
 	const {
 		result,
@@ -16,6 +16,7 @@
 		onToggleSelect,
 		expanded,
 		onToggleExpand,
+		renamed = false,
 		conflictGroup = null,
 		isFirstInGroup = false,
 		isLastInGroup = false,
@@ -25,6 +26,7 @@
 		onToggleSelect: () => void;
 		expanded: boolean;
 		onToggleExpand: () => void;
+		renamed?: boolean;
 		conflictGroup?: { groupIndex: number; groupSize: number } | null;
 		isFirstInGroup?: boolean;
 		isLastInGroup?: boolean;
@@ -107,7 +109,8 @@
 		isAmbiguous && 'bg-amber-500/[0.03]',
 		isCollision && 'bg-rose-500/[0.04] border-l-2 border-l-rose-500/40',
 		isCollision && !isLastInGroup && 'border-b-rose-500/20',
-		selected && 'bg-accent/30'
+		selected && 'bg-accent/30',
+		renamed && 'opacity-40 pointer-events-none'
 	)}
 >
 	<!-- Collapsed row -->
@@ -119,12 +122,18 @@
 			style="transition-duration: var(--duration-fast);"
 			onclick={handleRowClick}
 		>
-			<!-- Checkbox -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="mt-0.5" onclick={handleCheckboxClick}>
-				<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
-			</div>
+			<!-- Checkbox / Renamed indicator -->
+			{#if renamed}
+				<div class="mt-0.5 flex items-center justify-center w-4 h-4">
+					<Check class="size-3 text-emerald-400/60" />
+				</div>
+			{:else}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="mt-0.5" onclick={handleCheckboxClick}>
+					<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
+				</div>
+			{/if}
 
 			<!-- Expand indicator -->
 			<ChevronRight
@@ -185,15 +194,17 @@
 			</div>
 		</button>
 
-		<button
-			type="button"
-			class="shrink-0 p-2 mr-1 self-center text-muted-foreground/30 hover:text-foreground transition-colors"
-			style="transition-duration: var(--duration-fast);"
-			aria-label="Remove from results"
-			onclick={() => scanState.removeResult(result.source_path)}
-		>
-			<X class="size-3.5" />
-		</button>
+		{#if !renamed}
+			<button
+				type="button"
+				class="shrink-0 p-2 mr-1 self-center text-muted-foreground/30 hover:text-foreground transition-colors"
+				style="transition-duration: var(--duration-fast);"
+				aria-label="Remove from results"
+				onclick={() => scanState.removeResult(result.source_path)}
+			>
+				<X class="size-3.5" />
+			</button>
+		{/if}
 	</div>
 
 	<!-- Expanded content with smooth grid-template-rows transition -->
