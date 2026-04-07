@@ -126,3 +126,48 @@ jobs:
         run: |
           echo "Attaching CLI binaries to release $TAG"
           gh release upload "$TAG" release/mediarr-cli-*
+
+  notify-homebrew:
+    name: Update Homebrew Tap
+    needs: [attach-cli]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Find macOS DMG asset URL
+        id: dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          DMG_URL=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name | test("universal\\.dmg$")) | .url')
+          if [ -z "$DMG_URL" ]; then
+            DMG_URL=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name | endswith(".dmg")) | .url' | head -1)
+          fi
+          if [ -z "$DMG_URL" ]; then
+            echo "No DMG asset found in release, skipping Homebrew update"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dmg_url=$DMG_URL" >> "$GITHUB_OUTPUT"
+            echo "DMG URL: $DMG_URL"
+          fi
+
+      - name: Dispatch to Homebrew tap
+        if: steps.dmg.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DMG_URL: ${{ steps.dmg.outputs.dmg_url }}
+        run: |
+          gh api repos/matthewnessworthy/homebrew-mediarr/dispatches \
+            -f event_type=release-published \
+            -f "client_payload[version]=$VERSION" \
+            -f "client_payload[dmg_url]=$DMG_URL"
