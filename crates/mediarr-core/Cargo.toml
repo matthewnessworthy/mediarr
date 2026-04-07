@@ -3,6 +3,7 @@ name = "mediarr-core"
 version = "0.1.0"
 edition = "2021"
 description = "Core library for Mediarr media file renaming and organisation"
+license = "GPL-3.0-only"
 
 [dependencies]
 hunch = "1.1.7"
