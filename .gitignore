@@ -124,3 +124,6 @@ frontend/.playwright/
 # Test/UAT artifacts
 .playwright-mcp/
 uat-*.png
+
+# Jetbrains IDE
+.idea/
