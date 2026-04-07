@@ -408,5 +408,4 @@ mod tests {
         let info = parse_filename("Inception.2010.1080p.BluRay.mkv").unwrap();
         assert_eq!(info.season, None);
     }
-
 }

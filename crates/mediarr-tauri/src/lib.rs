@@ -160,9 +160,8 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
 
         let thread_name = format!("watcher-{path_str}");
         let watch_path_thread = watch_path.clone();
-        let thread_handle = match std::thread::Builder::new()
-            .name(thread_name.clone())
-            .spawn(move || {
+        let thread_handle = match std::thread::Builder::new().name(thread_name.clone()).spawn(
+            move || {
                 let db = match mediarr_core::HistoryDb::open(&data_path) {
                     Ok(db) => db,
                     Err(e) => {
@@ -198,7 +197,8 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
                 )) {
                     error!(path = %watch_path_thread.display(), "watcher exited with error: {e}");
                 }
-            }) {
+            },
+        ) {
             Ok(h) => h,
             Err(e) => {
                 warn!(path = %path_str, "failed to spawn auto-start watcher thread: {e}");

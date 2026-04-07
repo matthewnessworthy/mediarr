@@ -263,9 +263,9 @@ impl WatcherManager {
             let target_paths: &[std::path::PathBuf] = match &event.kind {
                 EventKind::Create(_) => &event.paths,
 
-                EventKind::Modify(ModifyKind::Name(
-                    RenameMode::To | RenameMode::Any,
-                )) => &event.paths,
+                EventKind::Modify(ModifyKind::Name(RenameMode::To | RenameMode::Any)) => {
+                    &event.paths
+                }
 
                 EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
                     // paths = [old, new]; we only care about the destination
@@ -325,7 +325,12 @@ impl WatcherManager {
     /// In review mode: scan, queue for review, log event.
     /// Errors are logged as watcher events rather than propagated (the
     /// watcher loop must not crash on individual file failures).
-    fn process_single_file(&mut self, path: &Path, watch_path: &Path, mode: WatcherMode) -> Result<()> {
+    fn process_single_file(
+        &mut self,
+        path: &Path,
+        watch_path: &Path,
+        mode: WatcherMode,
+    ) -> Result<()> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let filename = path
             .file_name()
@@ -386,7 +391,9 @@ impl WatcherManager {
                     let now = Instant::now();
                     for r in &results {
                         if r.success {
-                            let canonical = r.dest_path.canonicalize()
+                            let canonical = r
+                                .dest_path
+                                .canonicalize()
                                 .unwrap_or_else(|_| r.dest_path.clone());
                             self.recently_processed.insert(canonical, now);
                         }
@@ -824,9 +831,7 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(
-                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
-                )
+                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
             })
             .expect("spawn watcher thread");
 
@@ -843,7 +848,9 @@ mod tests {
 
         // Shutdown the watcher
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(
             result.is_ok(),
             "watcher run should complete without error: {:?}",
@@ -898,9 +905,7 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(
-                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
-                )
+                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
             })
             .expect("spawn watcher thread");
 
@@ -922,7 +927,9 @@ mod tests {
 
         // Shutdown the watcher
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(
             result.is_ok(),
             "watcher run should complete without error: {:?}",
@@ -959,7 +966,10 @@ mod tests {
 
         let mut watcher = WatcherManager::new(config, history);
         watcher.set_on_event(Box::new(move |event| {
-            eprintln!("[test] on_event callback: action={:?} filename={}", event.action, event.filename);
+            eprintln!(
+                "[test] on_event callback: action={:?} filename={}",
+                event.action, event.filename
+            );
             event_count_clone.fetch_add(1, Ordering::SeqCst);
         }));
 
@@ -975,9 +985,7 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(
-                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
-                )
+                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
             })
             .expect("spawn watcher thread");
 
@@ -993,7 +1001,9 @@ mod tests {
 
         // Shutdown the watcher
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(
             result.is_ok(),
             "watcher run should complete without error: {:?}",
@@ -1066,7 +1076,9 @@ mod tests {
 
         // Shutdown
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(
             result.is_ok(),
             "watcher run should complete without error: {:?}",
@@ -1117,9 +1129,7 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(
-                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
-                )
+                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
             })
             .expect("spawn watcher thread");
 
@@ -1135,11 +1145,16 @@ mod tests {
 
         // Shutdown
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(result.is_ok(), "watcher run should succeed: {:?}", result);
 
         let events = captured_events.lock().unwrap();
-        assert!(!events.is_empty(), "should have captured at least one event");
+        assert!(
+            !events.is_empty(),
+            "should have captured at least one event"
+        );
 
         let event = &events[0];
         assert_eq!(event.action, WatcherAction::Renamed);
@@ -1150,7 +1165,10 @@ mod tests {
         );
         assert_eq!(event.watch_path, watch_path);
         assert!(event.detail.is_some(), "event should have detail");
-        assert!(event.batch_id.is_some(), "renamed event should have batch_id");
+        assert!(
+            event.batch_id.is_some(),
+            "renamed event should have batch_id"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1189,9 +1207,7 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(
-                    watcher.run(&watch_path_clone, WatcherMode::Review, 1, shutdown_rx),
-                )
+                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Review, 1, shutdown_rx))
             })
             .expect("spawn watcher thread");
 
@@ -1207,15 +1223,23 @@ mod tests {
 
         // Shutdown
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(result.is_ok(), "watcher run should succeed: {:?}", result);
 
         let events = captured_events.lock().unwrap();
-        assert!(!events.is_empty(), "should have captured at least one event");
+        assert!(
+            !events.is_empty(),
+            "should have captured at least one event"
+        );
         assert_eq!(events[0].action, WatcherAction::Queued);
 
         // File should still exist (review mode doesn't rename)
-        assert!(video.exists(), "source file should still exist in review mode");
+        assert!(
+            video.exists(),
+            "source file should still exist in review mode"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1255,9 +1279,7 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(
-                    watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx),
-                )
+                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
             })
             .expect("spawn watcher thread");
 
@@ -1274,7 +1296,9 @@ mod tests {
 
         // Shutdown
         let _ = shutdown_tx.send(true);
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(result.is_ok(), "watcher run should succeed: {:?}", result);
 
         // No events should have been processed (all non-video)
@@ -1322,7 +1346,9 @@ mod tests {
         let _ = shutdown_tx.send(true);
 
         // Thread should exit within a reasonable time
-        let result = thread_handle.join().expect("watcher thread should not panic");
+        let result = thread_handle
+            .join()
+            .expect("watcher thread should not panic");
         assert!(
             result.is_ok(),
             "watcher should shut down cleanly: {:?}",
@@ -1346,7 +1372,8 @@ mod tests {
         let mut watcher = WatcherManager::new(config, history);
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
+        let (init_tx, init_rx) =
+            std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
 
         let watch_path = source.path().to_path_buf();
 
@@ -1397,7 +1424,8 @@ mod tests {
         let mut watcher = WatcherManager::new(config, history);
 
         let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
+        let (init_tx, init_rx) =
+            std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
 
         // Use a path that doesn't exist
         let watch_path = PathBuf::from("/tmp/nonexistent_watcher_test_dir_12345");

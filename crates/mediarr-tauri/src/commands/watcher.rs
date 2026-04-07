@@ -75,7 +75,11 @@ pub fn update_review_status(
 /// path watch), the error is propagated back to the frontend instead of being
 /// silently swallowed.
 #[tauri::command]
-pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path: String) -> CommandResult<()> {
+pub fn start_watcher(
+    app: tauri::AppHandle,
+    state: State<'_, ManagedState>,
+    path: String,
+) -> CommandResult<()> {
     let mut state = state.lock().map_err(|_| CommandError::StateLock)?;
 
     // Find the watcher config for this path
@@ -176,7 +180,12 @@ pub fn start_watcher(app: tauri::AppHandle, state: State<'_, ManagedState>, path
     info!(path = %path, "watcher started and confirmed running");
 
     // Persist active = true in config so watchers survive app restart
-    if let Some(wc) = state.config.watchers.iter_mut().find(|w| w.path.to_string_lossy() == path) {
+    if let Some(wc) = state
+        .config
+        .watchers
+        .iter_mut()
+        .find(|w| w.path.to_string_lossy() == path)
+    {
         wc.active = true;
     }
     let config_path = mediarr_core::config::default_config_path()
@@ -212,7 +221,12 @@ pub fn stop_watcher(state: State<'_, ManagedState>, path: String) -> CommandResu
     let _ = handle.shutdown_tx.send(true);
 
     // Persist active = false in config so watcher stays off after app restart
-    if let Some(wc) = state.config.watchers.iter_mut().find(|w| w.path.to_string_lossy() == path) {
+    if let Some(wc) = state
+        .config
+        .watchers
+        .iter_mut()
+        .find(|w| w.path.to_string_lossy() == path)
+    {
         wc.active = false;
     }
     if let Ok(config_path) = mediarr_core::config::default_config_path() {
@@ -229,10 +243,7 @@ pub fn stop_watcher(state: State<'_, ManagedState>, path: String) -> CommandResu
 /// Mirrors the CLI's execute_review_rename flow. Rejects stale entries where
 /// the source file no longer exists.
 #[tauri::command]
-pub fn approve_review_entry(
-    state: State<'_, ManagedState>,
-    id: i64,
-) -> CommandResult<()> {
+pub fn approve_review_entry(state: State<'_, ManagedState>, id: i64) -> CommandResult<()> {
     let state = state.lock().map_err(|_| CommandError::StateLock)?;
 
     // 1. Find the pending review entry
@@ -328,9 +339,7 @@ pub fn approve_review_entry(
     state.db.record_batch(&records)?;
 
     // 6. Update review status
-    state
-        .db
-        .update_review_status(id, ReviewStatus::Approved)?;
+    state.db.update_review_status(id, ReviewStatus::Approved)?;
 
     Ok(())
 }

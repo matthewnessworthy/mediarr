@@ -933,7 +933,10 @@ mod tests {
 
         let scanner = Scanner::new(config_with_output(output.path()));
         let results = scanner.scan_folder(source.path()).unwrap();
-        assert!(results.is_empty(), "empty directory should produce no results");
+        assert!(
+            results.is_empty(),
+            "empty directory should produce no results"
+        );
     }
 
     // -----------------------------------------------------------------------

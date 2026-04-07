@@ -549,8 +549,7 @@ fn watcher_e2e_auto_mode_start_process_stop() {
     let thread_handle = std::thread::Builder::new()
         .name("test-watcher-e2e".to_string())
         .spawn(move || {
-            let db = mediarr_core::HistoryDb::open(&db_path_clone)
-                .expect("open history db");
+            let db = mediarr_core::HistoryDb::open(&db_path_clone).expect("open history db");
             let mut watcher = mediarr_core::WatcherManager::new(config_clone, db);
             watcher.set_on_event(on_event_callback);
 
@@ -590,7 +589,9 @@ fn watcher_e2e_auto_mode_start_process_stop() {
 
     // -- Simulate stop_watcher command --
     let _ = shutdown_tx.send(true);
-    thread_handle.join().expect("watcher thread should not panic");
+    thread_handle
+        .join()
+        .expect("watcher thread should not panic");
 
     // -- Verify results --
     let events = all_events.lock().unwrap().clone();
@@ -685,7 +686,11 @@ fn watcher_e2e_review_mode_queue_and_approve() {
     let init_result = init_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("should receive init signal");
-    assert!(init_result.is_ok(), "init should succeed: {:?}", init_result);
+    assert!(
+        init_result.is_ok(),
+        "init should succeed: {:?}",
+        init_result
+    );
 
     // Drop a video file
     let video = watch_path.join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
@@ -701,9 +706,15 @@ fn watcher_e2e_review_mode_queue_and_approve() {
     // -- Verify review queue (mirrors list_review_queue command) --
     let db = mediarr_core::HistoryDb::open(&db_path).expect("open db");
     let queue = db
-        .list_review_queue(Some(watch_dir.path()), Some(mediarr_core::ReviewStatus::Pending))
+        .list_review_queue(
+            Some(watch_dir.path()),
+            Some(mediarr_core::ReviewStatus::Pending),
+        )
         .expect("list review queue");
-    assert!(!queue.is_empty(), "review queue should have at least 1 entry");
+    assert!(
+        !queue.is_empty(),
+        "review queue should have at least 1 entry"
+    );
 
     let entry = &queue[0];
     assert!(entry.id.is_some(), "entry should have an id");
@@ -748,8 +759,7 @@ fn watcher_e2e_review_mode_queue_and_approve() {
     let batch_id = mediarr_core::HistoryDb::generate_batch_id();
     let timestamp = chrono::Utc::now().to_rfc3339();
     let media_info: mediarr_core::MediaInfo =
-        serde_json::from_str(&entry.media_info_json)
-            .expect("media_info_json should deserialize");
+        serde_json::from_str(&entry.media_info_json).expect("media_info_json should deserialize");
 
     let records: Vec<mediarr_core::RenameRecord> = results
         .iter()
@@ -776,7 +786,10 @@ fn watcher_e2e_review_mode_queue_and_approve() {
     assert!(!video.exists(), "source should be moved after approve");
 
     let updated_queue = db
-        .list_review_queue(Some(watch_dir.path()), Some(mediarr_core::ReviewStatus::Pending))
+        .list_review_queue(
+            Some(watch_dir.path()),
+            Some(mediarr_core::ReviewStatus::Pending),
+        )
         .expect("list queue");
     assert!(
         updated_queue.is_empty(),

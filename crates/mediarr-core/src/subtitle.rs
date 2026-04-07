@@ -971,8 +971,7 @@ mod tests {
 
     #[test]
     fn path_with_commentary_type() {
-        let path =
-            generate_proposed_path("Movie", "en", Some(&SubtitleType::Commentary), "srt");
+        let path = generate_proposed_path("Movie", "en", Some(&SubtitleType::Commentary), "srt");
         assert_eq!(path, PathBuf::from("Movie.en.commentary.srt"));
     }
 
@@ -998,13 +997,15 @@ mod tests {
             .collect();
         // Should only find the .srt, not the .idx or .sub
         assert_eq!(sidecar.len(), 1, "sidecar should exclude VobSub files");
-        assert!(sidecar[0]
-            .source_path
-            .extension()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            == "srt");
+        assert!(
+            sidecar[0]
+                .source_path
+                .extension()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                == "srt"
+        );
     }
 
     #[test]

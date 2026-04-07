@@ -29,9 +29,7 @@ pub fn get_batch(
 
 /// Clear all rename history.
 #[tauri::command]
-pub fn clear_history(
-    state: State<'_, ManagedState>,
-) -> CommandResult<usize> {
+pub fn clear_history(state: State<'_, ManagedState>) -> CommandResult<usize> {
     let state = state.lock().map_err(|_| CommandError::StateLock)?;
     let deleted = state.db.clear_history()?;
     Ok(deleted)

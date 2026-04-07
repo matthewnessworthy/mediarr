@@ -130,7 +130,12 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
         // Build a lookup from source_path -> MediaInfo for history recording
         let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> = selected
             .iter()
-            .map(|r| (r.source_path.to_string_lossy().to_string(), r.media_info.clone()))
+            .map(|r| {
+                (
+                    r.source_path.to_string_lossy().to_string(),
+                    r.media_info.clone(),
+                )
+            })
             .collect();
 
         let records: Vec<RenameRecord> = succeeded
@@ -144,10 +149,7 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
                     .unwrap_or_default();
 
                 let source_key = r.source_path.to_string_lossy().to_string();
-                let info = media_info_map
-                    .get(&source_key)
-                    .cloned()
-                    .unwrap_or_default();
+                let info = media_info_map.get(&source_key).cloned().unwrap_or_default();
 
                 RenameRecord {
                     batch_id: batch_id.clone(),

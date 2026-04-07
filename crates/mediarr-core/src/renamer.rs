@@ -873,9 +873,7 @@ mod tests {
     #[test]
     fn dry_run_empty_plan_returns_empty() {
         let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
-        let plan = RenamePlan {
-            entries: vec![],
-        };
+        let plan = RenamePlan { entries: vec![] };
         let results = renamer.dry_run(&plan);
         assert!(results.is_empty());
     }
@@ -883,9 +881,7 @@ mod tests {
     #[test]
     fn execute_empty_plan_returns_empty() {
         let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, true);
-        let plan = RenamePlan {
-            entries: vec![],
-        };
+        let plan = RenamePlan { entries: vec![] };
         let results = renamer.execute(&plan);
         assert!(results.is_empty());
     }
@@ -899,7 +895,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let src = dir.path().join("movie.mkv");
         std::fs::write(&src, b"content").unwrap();
-        let dest = dir.path().join("nonexistent").join("deep").join("Movie.mkv");
+        let dest = dir
+            .path()
+            .join("nonexistent")
+            .join("deep")
+            .join("Movie.mkv");
 
         let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::Skip, false);
 
@@ -912,7 +912,10 @@ mod tests {
 
         let results = renamer.execute(&plan);
         assert_eq!(results.len(), 1);
-        assert!(!results[0].success, "should fail when parent dir doesn't exist and create_directories is false");
+        assert!(
+            !results[0].success,
+            "should fail when parent dir doesn't exist and create_directories is false"
+        );
         assert!(src.exists(), "source should still exist after failed move");
     }
 
@@ -939,7 +942,10 @@ mod tests {
 
         let results = renamer.dry_run(&plan);
         assert_eq!(results.len(), 1);
-        assert!(results[0].success, "overwrite should report success in dry run");
+        assert!(
+            results[0].success,
+            "overwrite should report success in dry run"
+        );
         // Dry run should NOT modify the existing file
         assert_eq!(
             std::fs::read_to_string(&dest).unwrap(),

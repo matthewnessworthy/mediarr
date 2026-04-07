@@ -205,9 +205,7 @@ fn to_title_case(s: &str) -> String {
             let mut chars = word.chars();
             match chars.next() {
                 None => String::new(),
-                Some(first) => {
-                    first.to_uppercase().to_string() + &chars.as_str().to_lowercase()
-                }
+                Some(first) => first.to_uppercase().to_string() + &chars.as_str().to_lowercase(),
             }
         })
         .collect::<Vec<_>>()
@@ -1019,8 +1017,7 @@ mod tests {
         let result = engine
             .render("{Title} ({year})/{Title} ({year}).{ext}", &info)
             .unwrap();
-        let expected = PathBuf::from("The Dark Knight (2010)")
-            .join("The Dark Knight (2010).mkv");
+        let expected = PathBuf::from("The Dark Knight (2010)").join("The Dark Knight (2010).mkv");
         assert_eq!(result, expected);
     }
 
@@ -1032,8 +1029,7 @@ mod tests {
         let result = engine
             .render("{Title}/{Title} - S{season:02}E{episode:02}.{ext}", &info)
             .unwrap();
-        let expected = PathBuf::from("The Office")
-            .join("The Office - S02E03.mkv");
+        let expected = PathBuf::from("The Office").join("The Office - S02E03.mkv");
         assert_eq!(result, expected);
     }
 

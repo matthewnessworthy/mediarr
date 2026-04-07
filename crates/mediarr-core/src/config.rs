@@ -604,7 +604,10 @@ mod tests {
             }),
         };
         let resolved = wc.resolve_config(&global);
-        assert_eq!(resolved.general.output_dir, Some(PathBuf::from("/per-watcher/output")));
+        assert_eq!(
+            resolved.general.output_dir,
+            Some(PathBuf::from("/per-watcher/output"))
+        );
     }
 
     #[test]
@@ -627,7 +630,10 @@ mod tests {
             }),
         };
         let resolved = wc.resolve_config(&global);
-        assert!(resolved.general.output_dir.is_none(), "empty string should force in-place (None)");
+        assert!(
+            resolved.general.output_dir.is_none(),
+            "empty string should force in-place (None)"
+        );
     }
 
     #[test]
@@ -726,19 +732,17 @@ mod tests {
             general: GeneralConfig::default(),
             templates: TemplateConfig::default(),
             subtitles: SubtitleConfig::default(),
-            watchers: vec![
-                WatcherConfig {
-                    path: PathBuf::from("/watch/movies"),
-                    mode: crate::types::WatcherMode::Auto,
-                    active: true,
-                    debounce_seconds: 5,
-                    settings: Some(crate::types::WatcherSettings {
-                        output_dir: Some("/movies/output".to_string()),
-                        operation: Some(RenameOperation::Copy),
-                        ..crate::types::WatcherSettings::default()
-                    }),
-                },
-            ],
+            watchers: vec![WatcherConfig {
+                path: PathBuf::from("/watch/movies"),
+                mode: crate::types::WatcherMode::Auto,
+                active: true,
+                debounce_seconds: 5,
+                settings: Some(crate::types::WatcherSettings {
+                    output_dir: Some("/movies/output".to_string()),
+                    operation: Some(RenameOperation::Copy),
+                    ..crate::types::WatcherSettings::default()
+                }),
+            }],
         };
 
         let toml_str = toml::to_string_pretty(&config).expect("serialize");
@@ -767,7 +771,10 @@ mod tests {
         let restored: WatcherConfig = toml::from_str(&toml_str).expect("deserialize");
         // The key check: is_empty() on the settings
         if let Some(ref s) = restored.settings {
-            assert!(s.is_empty(), "deserialized empty settings should be recognized as empty");
+            assert!(
+                s.is_empty(),
+                "deserialized empty settings should be recognized as empty"
+            );
         }
     }
 
@@ -790,7 +797,10 @@ create_directories = false
         .expect("write");
 
         let result = Config::load(&path);
-        assert!(result.is_err(), "partial TOML missing required sections should error");
+        assert!(
+            result.is_err(),
+            "partial TOML missing required sections should error"
+        );
         match result.unwrap_err() {
             MediError::ConfigParse(_) => {} // expected
             other => panic!("expected ConfigParse, got: {other:?}"),
@@ -804,7 +814,10 @@ create_directories = false
         std::fs::write(&path, "").expect("write");
 
         let result = Config::load(&path);
-        assert!(result.is_err(), "empty TOML should fail to parse (missing required fields)");
+        assert!(
+            result.is_err(),
+            "empty TOML should fail to parse (missing required fields)"
+        );
         match result.unwrap_err() {
             MediError::ConfigParse(_) => {} // expected
             other => panic!("expected ConfigParse, got: {other:?}"),

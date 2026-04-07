@@ -245,8 +245,8 @@ fn execute_review_rename(
     let batch_id = HistoryDb::generate_batch_id();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
-    let media_info: mediarr_core::MediaInfo = serde_json::from_str(&entry.media_info_json)
-        .unwrap_or_default();
+    let media_info: mediarr_core::MediaInfo =
+        serde_json::from_str(&entry.media_info_json).unwrap_or_default();
 
     let meta = std::fs::metadata(&entry.proposed_path).ok();
     let file_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);

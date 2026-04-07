@@ -93,10 +93,7 @@ pub fn execute_renames(
                 .unwrap_or_default();
 
             let source_key = r.source_path.to_string_lossy().to_string();
-            let info = media_info_map
-                .get(&source_key)
-                .cloned()
-                .unwrap_or_default();
+            let info = media_info_map.get(&source_key).cloned().unwrap_or_default();
 
             Some(RenameRecord {
                 batch_id: batch_id.clone(),
