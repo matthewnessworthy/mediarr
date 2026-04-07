@@ -3,6 +3,9 @@
   "productName": "Mediarr",
   "version": "0.1.0",
   "identifier": "com.mediarr.app",
+  "bundle": {
+    "createUpdaterArtifacts": true
+  },
   "build": {
     "beforeDevCommand": "cd ../frontend && npm run dev",
     "beforeBuildCommand": "cd ../frontend && npm run build",
@@ -21,5 +24,15 @@
       }
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_GENERATED_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/matthewnessworthy/mediarr/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }
