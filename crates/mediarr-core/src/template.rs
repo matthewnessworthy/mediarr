@@ -184,6 +184,20 @@ impl Default for TemplateEngine {
     }
 }
 
+/// Conditionally apply title case: only transforms the string if all alphabetic
+/// characters are lowercase. If the input already contains any uppercase letter,
+/// it is returned unchanged — preserving intentional casing from release filenames
+/// (e.g., "LOST", "Breaking Bad", "S.W.A.T.").
+///
+/// Digits and non-alphabetic characters are ignored when checking for uppercase.
+fn smart_title_case(s: &str) -> String {
+    if s.chars().any(|c| c.is_uppercase()) {
+        s.to_string()
+    } else {
+        to_title_case(s)
+    }
+}
+
 /// Convert a string to Title Case (first letter of each word uppercase, rest lowercase).
 fn to_title_case(s: &str) -> String {
     s.split_whitespace()
@@ -205,7 +219,7 @@ fn build_vars(info: &MediaInfo) -> HashMap<String, String> {
     let mut vars = HashMap::new();
 
     vars.insert("title".to_string(), info.title.clone());
-    vars.insert("Title".to_string(), to_title_case(&info.title));
+    vars.insert("Title".to_string(), smart_title_case(&info.title));
     vars.insert(
         "year".to_string(),
         info.year.map(|y| y.to_string()).unwrap_or_default(),
