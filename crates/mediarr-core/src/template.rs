@@ -950,7 +950,8 @@ mod tests {
         let mut info = movie_info();
         info.title = "INCEPTION".to_string();
         let result = engine.render("{Title}.{ext}", &info).unwrap();
-        assert_eq!(result, PathBuf::from("Inception.mkv"));
+        // All-caps input has uppercase chars -> preserved as-is
+        assert_eq!(result, PathBuf::from("INCEPTION.mkv"));
     }
 
     #[test]
@@ -1020,6 +1021,46 @@ mod tests {
         let expected = PathBuf::from("The Office")
             .join("The Office - S02E03.mkv");
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn render_title_case_preserves_mixed_case() {
+        let engine = super::TemplateEngine::new();
+        let mut info = series_info();
+        info.title = "Breaking Bad".to_string();
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        // Mixed case has uppercase chars -> preserved as-is
+        assert_eq!(result, PathBuf::from("Breaking Bad.mkv"));
+    }
+
+    #[test]
+    fn render_title_case_preserves_all_caps() {
+        let engine = super::TemplateEngine::new();
+        let mut info = series_info();
+        info.title = "LOST".to_string();
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        // All-caps has uppercase chars -> preserved as-is
+        assert_eq!(result, PathBuf::from("LOST.mkv"));
+    }
+
+    #[test]
+    fn render_title_case_with_digits() {
+        let engine = super::TemplateEngine::new();
+        let mut info = series_info();
+        info.title = "the 100".to_string();
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        // All-lowercase alpha chars (digits don't count) -> title case applied
+        assert_eq!(result, PathBuf::from("The 100.mkv"));
+    }
+
+    #[test]
+    fn render_title_case_preserves_swat() {
+        let engine = super::TemplateEngine::new();
+        let mut info = series_info();
+        info.title = "S.W.A.T.".to_string();
+        let result = engine.render("{Title}.{ext}", &info).unwrap();
+        // Has uppercase chars -> preserved as-is (dots collapsed by engine)
+        assert_eq!(result, PathBuf::from("S.W.A.T.mkv"));
     }
 
     #[test]
