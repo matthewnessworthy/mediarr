@@ -9,6 +9,7 @@
 	import TemplateEditor from '$lib/components/settings/TemplateEditor.svelte';
 	import SubtitlePrefs from '$lib/components/settings/SubtitlePrefs.svelte';
 	import GeneralSettings from '$lib/components/settings/GeneralSettings.svelte';
+	import UpdateChecker from '$lib/components/settings/UpdateChecker.svelte';
 
 	let hasUnsavedChanges = $state(false);
 	let savedSnapshot = $state<string>('');
@@ -84,6 +85,7 @@
 				<Tabs.Trigger value="templates">Templates</Tabs.Trigger>
 				<Tabs.Trigger value="subtitles">Subtitles</Tabs.Trigger>
 				<Tabs.Trigger value="general">General</Tabs.Trigger>
+				<Tabs.Trigger value="about">About</Tabs.Trigger>
 			</Tabs.List>
 			<Tabs.Content value="templates" class="pt-6">
 				<div class="space-y-6">
@@ -120,6 +122,9 @@
 						}
 					}}
 				/>
+			</Tabs.Content>
+			<Tabs.Content value="about" class="pt-6">
+				<UpdateChecker />
 			</Tabs.Content>
 		</Tabs.Root>
 	{/if}

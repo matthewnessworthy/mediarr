@@ -3,12 +3,18 @@
 	import { onMount } from 'svelte';
 	import { ScanSearch, Eye, Clock, Settings, Sun, Moon } from '@lucide/svelte';
 	import { themeState } from '$lib/state/theme.svelte';
+	import { updaterState } from '$lib/state/updater.svelte';
 	import '../app.css';
 
 	const { children } = $props();
 
 	onMount(() => {
 		themeState.init();
+
+		// Check for updates after a short delay to avoid blocking startup
+		setTimeout(() => {
+			updaterState.checkForUpdates();
+		}, 3000);
 
 		// Prevent the webview from navigating to dropped files.
 		// Tauri's dragDropEnabled intercepts native drops and emits tauri://drag-drop,
