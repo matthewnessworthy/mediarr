@@ -99,6 +99,10 @@ impl TemplateEngine {
         // Append any trailing text
         result.push_str(&template[last_end..]);
 
+        // Collapse empty bracket/parenthesis pairs from empty variable substitutions
+        // e.g., "Hostage ()" → "Hostage", "Title - []" → "Title"
+        let result = collapse_empty_groups(&result);
+
         // Defense-in-depth: reject path traversal BEFORE any sanitization.
         // Check raw rendered output for ".." or "." path components.
         // collapse_dots and sanitize_component would mask these as empty strings,
@@ -304,6 +308,33 @@ fn apply_modifier(value: &str, modifier: &str) -> Result<String> {
     Err(MediError::InvalidModifier {
         modifier: modifier.to_string(),
     })
+}
+
+/// Collapse empty bracket/parenthesis pairs left behind by empty variable substitutions.
+///
+/// Handles `()`, `[]`, `{}` with optional whitespace inside, plus any adjacent
+/// whitespace or punctuation that becomes orphaned (e.g., " ()" or " - ()").
+fn collapse_empty_groups(input: &str) -> String {
+    static EMPTY_GROUP_RE: LazyLock<Regex> = LazyLock::new(|| {
+        // Match optional leading separator + space, then empty brackets, then optional trailing space
+        Regex::new(r"(?:\s*[-–—]\s*)?[\s]*[(\[]\s*[)\]]\s*").expect("valid regex")
+    });
+    let result = EMPTY_GROUP_RE.replace_all(input, "");
+    // Clean up any resulting double spaces
+    let mut out = String::with_capacity(result.len());
+    let mut last_was_space = false;
+    for ch in result.chars() {
+        if ch == ' ' {
+            if !last_was_space {
+                out.push(ch);
+            }
+            last_was_space = true;
+        } else {
+            last_was_space = false;
+            out.push(ch);
+        }
+    }
+    out.trim().to_string()
 }
 
 /// Collapse consecutive dots into single dots, and strip leading/trailing dots
@@ -1093,5 +1124,49 @@ mod tests {
         };
         let result = engine.render("{title}/{title}.{ext}", &info);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn render_empty_year_collapses_parentheses() {
+        let engine = super::TemplateEngine::new();
+        let info = MediaInfo {
+            title: "Hostage".to_string(),
+            year: None,
+            container: "mkv".to_string(),
+            ..movie_info()
+        };
+        let result = engine
+            .render("{Title} ({year})/{Title} ({year}).{ext}", &info)
+            .unwrap();
+        // Should produce "Hostage/Hostage.mkv", not "Hostage ()/Hostage ().mkv"
+        assert_eq!(result, PathBuf::from("Hostage/Hostage.mkv"));
+    }
+
+    #[test]
+    fn render_empty_year_with_dash_collapses() {
+        let engine = super::TemplateEngine::new();
+        let info = MediaInfo {
+            title: "Hostage".to_string(),
+            year: None,
+            container: "mkv".to_string(),
+            ..movie_info()
+        };
+        let result = engine
+            .render("{Title} - ({year})/{Title}.{ext}", &info)
+            .unwrap();
+        assert_eq!(result, PathBuf::from("Hostage/Hostage.mkv"));
+    }
+
+    #[test]
+    fn render_present_year_keeps_parentheses() {
+        let engine = super::TemplateEngine::new();
+        let info = movie_info(); // has year=2010
+        let result = engine
+            .render("{Title} ({year})/{Title} ({year}).{ext}", &info)
+            .unwrap();
+        assert_eq!(
+            result,
+            PathBuf::from("Inception (2010)/Inception (2010).mkv")
+        );
     }
 }

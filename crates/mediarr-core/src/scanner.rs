@@ -18,6 +18,32 @@ use crate::subtitle::SubtitleDiscovery;
 use crate::template::TemplateEngine;
 use crate::types::{MediaType, ParseConfidence, ScanFilter, ScanResult, ScanStatus};
 
+/// Build the proposed path for in-place mode, avoiding re-nesting when the
+/// source file is already inside a directory that matches the template's
+/// top-level folder component.
+///
+/// For example, if the source is `Hostage (2020)/Hostage.mkv` and the template
+/// renders to `Hostage (2020)/Hostage (2020).mkv`, the result should be
+/// `Hostage (2020)/Hostage (2020).mkv` — not `Hostage (2020)/Hostage (2020)/Hostage (2020).mkv`.
+fn in_place_proposed_path(source: &Path, template_relative: &Path) -> PathBuf {
+    let source_parent = source.parent().unwrap_or_else(|| Path::new(""));
+
+    // If the template has a directory component, check if it matches the source's parent
+    if let Some(template_first_component) = template_relative.components().next() {
+        let template_dir = template_first_component.as_os_str();
+        if let Some(source_dir_name) = source_parent.file_name() {
+            if template_dir == source_dir_name {
+                // Source is already in the right folder — use grandparent + full template path
+                let grandparent = source_parent.parent().unwrap_or_else(|| Path::new(""));
+                return grandparent.join(template_relative);
+            }
+        }
+    }
+
+    // Default: join template path to source's parent directory
+    source_parent.join(template_relative)
+}
+
 /// Orchestrates folder scanning: parse filenames, render templates, discover
 /// subtitles, detect conflicts.
 pub struct Scanner {
@@ -115,21 +141,31 @@ impl Scanner {
             let sibling_refs: Vec<&str> = sibling_names.iter().map(|s| s.as_str()).collect();
 
             for video_path in video_files {
-                let filename = match video_path.file_name().and_then(|n| n.to_str()) {
-                    Some(name) => name,
-                    None => {
-                        warn!(path = %video_path.display(), "skipping file with non-UTF-8 name");
-                        continue;
-                    }
+                // Build relative path from scan root for hunch to extract
+                // metadata from parent directory names (e.g., year from "Hostage (2020)/")
+                let relative_input = video_path
+                    .strip_prefix(path)
+                    .ok()
+                    .and_then(|p| p.to_str().map(|s| s.to_string()));
+
+                let parse_input = match &relative_input {
+                    Some(rel) if rel.contains('/') || rel.contains('\\') => rel.as_str(),
+                    _ => match video_path.file_name().and_then(|n| n.to_str()) {
+                        Some(name) => name,
+                        None => {
+                            warn!(path = %video_path.display(), "skipping file with non-UTF-8 name");
+                            continue;
+                        }
+                    },
                 };
 
-                debug!(filename, dir = %dir.display(), "parsing video file");
+                debug!(parse_input, dir = %dir.display(), "parsing video file");
 
                 // Parse with context
-                let media_info = match parser::parse_with_context(filename, &sibling_refs) {
+                let media_info = match parser::parse_with_context(parse_input, &sibling_refs) {
                     Ok(info) => info,
                     Err(e) => {
-                        debug!(filename, error = %e, "parse failed, adding as Error");
+                        debug!(parse_input, error = %e, "parse failed, adding as Error");
                         results.push(ScanResult {
                             source_path: video_path.clone(),
                             media_info: crate::types::MediaInfo {
@@ -151,7 +187,7 @@ impl Scanner {
                 let relative_path = match self.template_engine.render(template, &media_info) {
                     Ok(p) => p,
                     Err(e) => {
-                        warn!(filename, error = %e, "template render failed");
+                        warn!(parse_input, error = %e, "template render failed");
                         results.push(ScanResult {
                             source_path: video_path.clone(),
                             media_info,
@@ -169,11 +205,8 @@ impl Scanner {
                 let proposed_path = if let Some(ref output_dir) = self.config.general.output_dir {
                     output_dir.join(&relative_path)
                 } else {
-                    // In-place: relative to source's parent dir
-                    video_path
-                        .parent()
-                        .unwrap_or_else(|| Path::new(""))
-                        .join(&relative_path)
+                    // In-place: avoid re-nesting when already in correct folder
+                    in_place_proposed_path(video_path, &relative_path)
                 };
 
                 // Discover subtitles
@@ -246,7 +279,8 @@ impl Scanner {
             return Err(MediError::ParseFailed(format!("not a video file: .{ext}")));
         }
 
-        // Extract filename
+        // Build parse input: include parent directory name for metadata extraction
+        // (e.g., "Hostage (2020)/Hostage.mkv" lets hunch extract year from parent)
         let filename =
             path.file_name()
                 .and_then(|n| n.to_str())
@@ -254,10 +288,17 @@ impl Scanner {
                     path: path.to_path_buf(),
                 })?;
 
-        debug!(filename, "scanning single file");
+        let parse_input = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|d| d.to_str())
+            .map(|dir| format!("{dir}/{filename}"))
+            .unwrap_or_else(|| filename.to_string());
 
-        // Parse without context (single file, no siblings)
-        let media_info = parser::parse_filename(filename)?;
+        debug!(parse_input, "scanning single file");
+
+        // Parse with parent directory context for better metadata extraction
+        let media_info = parser::parse_filename(&parse_input)?;
 
         // Select template and render proposed path
         let template = self.select_template(&media_info.media_type);
@@ -267,9 +308,8 @@ impl Scanner {
         let proposed_path = if let Some(ref output_dir) = self.config.general.output_dir {
             output_dir.join(&relative_path)
         } else {
-            path.parent()
-                .unwrap_or_else(|| Path::new(""))
-                .join(&relative_path)
+            // In-place: avoid re-nesting when already in correct folder
+            in_place_proposed_path(path, &relative_path)
         };
 
         // Discover subtitles
@@ -1027,6 +1067,77 @@ mod tests {
             !path_str.contains("SE05") && !path_str.contains("SE5"),
             "proposed_path should NOT contain bare 'SE' without season digits, got: {}",
             path_str
+        );
+    }
+
+    #[test]
+    fn scan_folder_extracts_year_from_parent_directory() {
+        let source = TempDir::new().unwrap();
+
+        // Create "Hostage (2020)/Hostage.mkv" — year is only in parent dir name
+        let movie_dir = source.path().join("Hostage (2020)");
+        fs::create_dir(&movie_dir).unwrap();
+        fs::write(movie_dir.join("Hostage.mkv"), b"video").unwrap();
+
+        let output = TempDir::new().unwrap();
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let results = scanner.scan_folder(source.path()).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].media_info.year,
+            Some(2020),
+            "year should be extracted from parent directory name"
+        );
+    }
+
+    #[test]
+    fn scan_file_extracts_year_from_parent_directory() {
+        let source = TempDir::new().unwrap();
+
+        let movie_dir = source.path().join("Hostage (2020)");
+        fs::create_dir(&movie_dir).unwrap();
+        let video = movie_dir.join("Hostage.mkv");
+        fs::write(&video, b"video").unwrap();
+
+        let output = TempDir::new().unwrap();
+        let scanner = Scanner::new(config_with_output(output.path()));
+        let result = scanner.scan_file(&video).unwrap();
+        assert_eq!(
+            result.media_info.year,
+            Some(2020),
+            "year should be extracted from parent directory name"
+        );
+    }
+
+    #[test]
+    fn in_place_no_renesting_when_folder_matches_template() {
+        let source = TempDir::new().unwrap();
+
+        // Source: "Hostage (2020)/Hostage.mkv" already in correct folder
+        let movie_dir = source.path().join("Hostage (2020)");
+        fs::create_dir(&movie_dir).unwrap();
+        let video = movie_dir.join("Hostage.mkv");
+        fs::write(&video, b"video").unwrap();
+
+        // In-place mode (no output_dir)
+        let config = Config::default();
+        let scanner = Scanner::new(config);
+        let result = scanner.scan_file(&video).unwrap();
+
+        // Should NOT produce ".../Hostage (2020)/Hostage (2020)/Hostage (2020).mkv"
+        // Correct result: ".../Hostage (2020)/Hostage (2020).mkv"
+        // (one directory component, one filename — the filename contains the year too)
+        let path_str = result.proposed_path.to_str().unwrap();
+        assert!(
+            !path_str.contains("Hostage (2020)/Hostage (2020)/"),
+            "proposed path should not double-nest: {:?}",
+            result.proposed_path
+        );
+        // Verify it ends with the correct structure
+        assert!(
+            path_str.ends_with("Hostage (2020)/Hostage (2020).mkv"),
+            "proposed path should end with Hostage (2020)/Hostage (2020).mkv, got {:?}",
+            result.proposed_path
         );
     }
 
