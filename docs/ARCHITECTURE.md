@@ -70,7 +70,7 @@ A typical **scan-then-rename** operation flows through the system as follows:
 7. **Plan presentation** -- Results are returned as a `Vec<ScanResult>` to the calling binary. The GUI displays them in a table with status badges; the CLI renders a formatted table or JSON output.
 8. **Rename execution** -- When the user confirms, `Renamer::execute` processes the plan entry by entry. Moves use `fs_util::safe_move` which handles cross-filesystem EXDEV errors with a copy-verify-remove fallback. Copies use `std::fs::copy`. The configured `ConflictStrategy` (Skip, Overwrite, NumericSuffix) determines behavior for conflicting targets.
 9. **History recording** -- Each rename batch is recorded in SQLite via `HistoryDb::record_batch`, grouped under a UUID v4 batch ID. Records include source/dest paths, parsed metadata, file size, and modification time.
-10. **Undo** -- `HistoryDb::check_undo` verifies eligibility (destination files still exist, source paths are free) and `HistoryDb::execute_undo` reverses the moves.
+10. **Undo** -- `HistoryDb::check_undo_eligible` verifies eligibility (destination files still exist, source paths are free) and `HistoryDb::execute_undo` reverses the moves.
 
 The **watcher** flow is similar but event-driven: `WatcherManager` uses `notify-debouncer-full` to monitor a folder, bridges debounced filesystem events from notify's sync callbacks to a tokio async loop via channels, then runs the scan-rename pipeline automatically or queues entries for user review depending on the watcher's configured mode (auto/review).
 
@@ -132,7 +132,7 @@ mediarr/
 │           └── commands/         # One module per IPC command group
 │               ├── scan.rs       # scan_folder, scan_folder_streaming, scan_files
 │               ├── rename.rs     # dry_run_renames, execute_renames
-│               ├── history.rs    # list_batches, get_batch, check_undo, execute_undo, clear_history
+│               ├── history.rs    # list_batches, get_batch, check_undo_eligible, execute_undo, clear_history
 │               ├── watcher.rs    # start/stop_watcher, list events/review queue, approve entries
 │               └── config.rs     # get/update config, preview/validate templates
 └── frontend/                     # Svelte SPA (served by Tauri webview)

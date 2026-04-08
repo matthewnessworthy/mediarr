@@ -1,9 +1,55 @@
 <!-- generated-by: gsd-doc-writer -->
 # Getting Started
 
-This guide walks you through setting up Mediarr for the first time, from installing prerequisites to running your first media file scan.
+This guide walks you through setting up Mediarr for the first time, from installing a pre-built release to running your first media file scan.
 
-## Prerequisites
+## Install Pre-built Release
+
+### macOS (Homebrew)
+
+The easiest way to install on macOS:
+
+```bash
+brew install matthewnessworthy/mediarr/mediarr
+```
+
+The tap is automatically updated when new releases are published.
+
+### Download from GitHub Releases
+
+Pre-built binaries for all platforms are available on the [Releases](https://github.com/matthewnessworthy/mediarr/releases) page.
+
+**Desktop app:**
+
+| Platform | File | Notes |
+|----------|------|-------|
+| macOS (Universal) | `Mediarr_x.x.x_universal.dmg` | Supports both Apple Silicon and Intel |
+| Windows | `Mediarr_x.x.x_x64-setup.exe` | NSIS installer |
+| Windows | `Mediarr_x.x.x_x64_en-US.msi` | MSI package |
+| Linux | `Mediarr_x.x.x_amd64.deb` | Debian/Ubuntu |
+| Linux | `Mediarr_x.x.x_amd64.AppImage` | Portable, no install needed |
+| Linux | `Mediarr-x.x.x-1.x86_64.rpm` | Fedora/RHEL |
+
+**CLI only:**
+
+| Platform | File |
+|----------|------|
+| macOS | `mediarr-cli-macos-amd64` |
+| Linux | `mediarr-cli-linux-amd64` |
+| Windows | `mediarr-cli-windows-amd64.exe` |
+
+After downloading a CLI binary, make it executable and move it to your PATH:
+
+```bash
+chmod +x mediarr-cli-*
+sudo mv mediarr-cli-* /usr/local/bin/mediarr
+```
+
+If you installed a pre-built release, skip to [First Run](#first-run).
+
+## Build from Source
+
+### Prerequisites
 
 Mediarr is a Rust + Tauri + Svelte application. You need the following tools installed before building.
 
@@ -54,7 +100,7 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev 
 
 For the full list of Tauri prerequisites, see the [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/).
 
-## Installation Steps
+### Clone and Build
 
 1. Clone the repository:
 

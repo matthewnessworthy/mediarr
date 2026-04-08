@@ -5,13 +5,47 @@ A cross-platform desktop and CLI application for renaming and organising movies,
 
 ## Installation
 
-### Prerequisites
+### macOS (Homebrew)
 
-- **Rust** (2021 edition) with `cargo`
-- **Node.js** (for frontend build)
-- **npm** (ships with Node.js)
+```bash
+brew install matthewnessworthy/mediarr/mediarr
+```
+
+This installs the Mediarr desktop app via a Homebrew cask. The tap is automatically updated when new releases are published.
+
+### Download from GitHub Releases
+
+Pre-built binaries are available on the [Releases](https://github.com/matthewnessworthy/mediarr/releases) page.
+
+**Desktop app:**
+
+| Platform | File | Format |
+|----------|------|--------|
+| macOS (Universal) | `Mediarr_x.x.x_universal.dmg` | DMG disk image |
+| Windows | `Mediarr_x.x.x_x64-setup.exe` | Installer |
+| Windows | `Mediarr_x.x.x_x64_en-US.msi` | MSI package |
+| Linux | `Mediarr_x.x.x_amd64.deb` | Debian package |
+| Linux | `Mediarr_x.x.x_amd64.AppImage` | AppImage |
+| Linux | `Mediarr-x.x.x-1.x86_64.rpm` | RPM package |
+
+**CLI only:**
+
+| Platform | File |
+|----------|------|
+| macOS | `mediarr-cli-macos-amd64` |
+| Linux | `mediarr-cli-linux-amd64` |
+| Windows | `mediarr-cli-windows-amd64.exe` |
+
+After downloading a CLI binary, make it executable and move it to your PATH:
+
+```bash
+chmod +x mediarr-cli-*
+sudo mv mediarr-cli-* /usr/local/bin/mediarr
+```
 
 ### Build from source
+
+Requires Rust (2021 edition), Node.js, and npm.
 
 ```bash
 git clone git@github.com:matthewnessworthy/mediarr.git
@@ -171,4 +205,4 @@ cargo build --release -p mediarr-cli  # CLI only
 
 ## License
 
-This project does not currently include a LICENSE file. All rights reserved.
+This project is licensed under the [GNU General Public License v3.0](LICENSE).
