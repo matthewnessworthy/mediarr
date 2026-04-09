@@ -305,7 +305,7 @@ impl Scanner {
         let scan_root_for_file = dir
             .parent()
             .and_then(|p| p.parent())
-            .unwrap_or_else(|| dir.parent().unwrap_or_else(|| Path::new("")));
+            .unwrap_or(dir);
         let folder_ctx = Self::parse_folder_context(dir, scan_root_for_file);
 
         // Merge folder context (D-01 through D-08)
