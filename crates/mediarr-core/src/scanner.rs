@@ -16,7 +16,7 @@ use crate::fs_util::VIDEO_EXTENSIONS;
 use crate::parser;
 use crate::subtitle::SubtitleDiscovery;
 use crate::template::TemplateEngine;
-use crate::types::{MediaType, ParseConfidence, ScanFilter, ScanResult, ScanStatus};
+use crate::types::{FolderContext, MediaType, ParseConfidence, ScanFilter, ScanResult, ScanStatus};
 
 /// Build the proposed path for in-place mode, avoiding re-nesting when the
 /// source file is already inside a directory that matches the template's
@@ -140,32 +140,27 @@ impl Scanner {
                 .collect();
             let sibling_refs: Vec<&str> = sibling_names.iter().map(|s| s.as_str()).collect();
 
-            for video_path in video_files {
-                // Build relative path from scan root for hunch to extract
-                // metadata from parent directory names (e.g., year from "Hostage (2020)/")
-                let relative_input = video_path
-                    .strip_prefix(path)
-                    .ok()
-                    .and_then(|p| p.to_str().map(|s| s.to_string()));
+            // Parse folder names once for this directory group (D-03/D-04)
+            // Performance: called once per directory, not per file
+            let folder_ctx = Self::parse_folder_context(dir, path);
 
-                let parse_input = match &relative_input {
-                    Some(rel) if rel.contains('/') || rel.contains('\\') => rel.as_str(),
-                    _ => match video_path.file_name().and_then(|n| n.to_str()) {
-                        Some(name) => name,
-                        None => {
-                            warn!(path = %video_path.display(), "skipping file with non-UTF-8 name");
-                            continue;
-                        }
-                    },
+            for video_path in video_files {
+                // Parse filename only -- folder context applied separately via merge (not via hunch path trick)
+                let filename = match video_path.file_name().and_then(|n| n.to_str()) {
+                    Some(name) => name,
+                    None => {
+                        warn!(path = %video_path.display(), "skipping file with non-UTF-8 name");
+                        continue;
+                    }
                 };
 
-                debug!(parse_input, dir = %dir.display(), "parsing video file");
+                debug!(filename, dir = %dir.display(), "parsing video file");
 
-                // Parse with context
-                let media_info = match parser::parse_with_context(parse_input, &sibling_refs) {
+                // Parse with sibling context (filename only, not relative path)
+                let file_info = match parser::parse_with_context(filename, &sibling_refs) {
                     Ok(info) => info,
                     Err(e) => {
-                        debug!(parse_input, error = %e, "parse failed, adding as Error");
+                        debug!(filename, error = %e, "parse failed, adding as Error");
                         results.push(ScanResult {
                             source_path: video_path.clone(),
                             media_info: crate::types::MediaInfo {
@@ -182,12 +177,16 @@ impl Scanner {
                     }
                 };
 
+                // Merge folder context into file parse result (D-01 through D-08)
+                let (media_info, folder_ambiguity) =
+                    parser::merge_folder_context(file_info, &folder_ctx);
+
                 // Select template and render proposed path
                 let template = self.select_template(&media_info.media_type);
                 let relative_path = match self.template_engine.render(template, &media_info) {
                     Ok(p) => p,
                     Err(e) => {
-                        warn!(parse_input, error = %e, "template render failed");
+                        warn!(filename, error = %e, "template render failed");
                         results.push(ScanResult {
                             source_path: video_path.clone(),
                             media_info,
@@ -219,8 +218,13 @@ impl Scanner {
                     None => vec![],
                 };
 
-                // Determine initial status based on confidence
-                let (status, ambiguity_reason) = Self::confidence_to_status(&media_info.confidence);
+                // Prefer folder-merge ambiguity over generic confidence-based status
+                // (addresses review concern about double ambiguity flagging)
+                let (status, ambiguity_reason) = if let Some(reason) = folder_ambiguity {
+                    (ScanStatus::Ambiguous, Some(reason))
+                } else {
+                    Self::confidence_to_status(&media_info.confidence)
+                };
 
                 results.push(ScanResult {
                     source_path: video_path.clone(),
@@ -353,6 +357,33 @@ impl Scanner {
                 Some("medium confidence parse".to_string()),
             ),
             ParseConfidence::High => (ScanStatus::Ok, None),
+        }
+    }
+
+    /// Parse metadata from parent and grandparent directory names.
+    ///
+    /// Looks up to two levels deep (per D-03): immediate parent and grandparent.
+    /// Each folder level is parsed independently through hunch (per D-04).
+    /// Does not go above `scan_root` to prevent scanning unrelated directories.
+    ///
+    /// Called once per directory group in scan_folder (not per file) for performance.
+    /// In scan_file, called once per invocation.
+    fn parse_folder_context(dir: &Path, scan_root: &Path) -> FolderContext {
+        let parent_info = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|name| parser::parse_filename(name).ok());
+
+        let grandparent_info = dir
+            .parent()
+            .filter(|p| *p != scan_root && p.starts_with(scan_root))
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .and_then(|name| parser::parse_filename(name).ok());
+
+        FolderContext {
+            parent: parent_info,
+            grandparent: grandparent_info,
         }
     }
 
