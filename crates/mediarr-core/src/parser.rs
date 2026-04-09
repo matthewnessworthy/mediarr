@@ -11,7 +11,7 @@
 use hunch::{hunch as hunch_parse, hunch_with_context as hunch_ctx, Property};
 
 use crate::error::{MediError, Result};
-use crate::types::{MediaInfo, MediaType, ParseConfidence};
+use crate::types::{FolderContext, MediaInfo, MediaType, ParseConfidence};
 
 /// Parse a single filename into [`MediaInfo`].
 ///
@@ -186,6 +186,182 @@ fn extract_extension(filename: &str) -> String {
         Some(pos) => basename[pos + 1..].to_lowercase(),
         None => String::new(),
     }
+}
+
+/// Merge parent and grandparent folder metadata into a single best-of view.
+///
+/// Field-by-field resolution order (addresses review concern about underspecification):
+/// - **title**: Parent title wins UNLESS parent title matches season-only pattern
+///   (case-insensitive `^season\s+\d+$`), in which case grandparent title is used.
+///   This handles Plex convention: `Show Name/Season 02/file.mkv`.
+/// - **season**: Parent season always wins (closer to file = more relevant).
+///   If parent has no season, grandparent season is used.
+/// - **year**: Parent year wins. If parent has no year, grandparent year is used.
+/// - **media_type**: Parent type wins (it reflects the folder closer to the file).
+/// - **episodes**: Parent episodes win (rare in folder names, but parent takes precedence).
+/// - **confidence**: Parent confidence wins (closer folder = more reliable context).
+/// - **All other fields** (resolution, codec, source, release_group, language, container):
+///   Parent wins; grandparent fills None gaps only.
+fn merge_folder_levels(
+    parent: &Option<MediaInfo>,
+    grandparent: &Option<MediaInfo>,
+) -> Option<MediaInfo> {
+    match (parent, grandparent) {
+        (None, None) => None,
+        (Some(p), None) => Some(p.clone()),
+        (None, Some(g)) => Some(g.clone()),
+        (Some(p), Some(g)) => {
+            let mut merged = p.clone();
+
+            // Title: discard parent title if it looks like a season-only folder name
+            // e.g., "Season 02", "season 5" -> use grandparent title instead.
+            // Also use grandparent title if parent title is empty.
+            if !g.title.is_empty()
+                && (is_season_only_title(&merged.title) || merged.title.is_empty())
+            {
+                merged.title = g.title.clone();
+            }
+
+            // Season: parent wins (already in merged). Grandparent fills gap only.
+            if merged.season.is_none() {
+                merged.season = g.season;
+            }
+
+            // Year: parent wins. Grandparent fills gap only.
+            if merged.year.is_none() {
+                merged.year = g.year;
+            }
+
+            // Other optional fields: parent wins, grandparent fills None gaps
+            if merged.resolution.is_none() {
+                merged.resolution = g.resolution.clone();
+            }
+            if merged.video_codec.is_none() {
+                merged.video_codec = g.video_codec.clone();
+            }
+            if merged.audio_codec.is_none() {
+                merged.audio_codec = g.audio_codec.clone();
+            }
+            if merged.source.is_none() {
+                merged.source = g.source.clone();
+            }
+            if merged.release_group.is_none() {
+                merged.release_group = g.release_group.clone();
+            }
+            if merged.language.is_none() {
+                merged.language = g.language.clone();
+            }
+
+            Some(merged)
+        }
+    }
+}
+
+/// Check if a folder title is just a season indicator like "Season 02" or "season 5".
+/// Used to skip bad titles from Plex-convention season folders.
+/// Does NOT use regex crate -- simple string operations only.
+fn is_season_only_title(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    if let Some(rest) = lower.strip_prefix("season") {
+        let trimmed = rest.trim();
+        !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit())
+    } else {
+        false
+    }
+}
+
+/// Merge folder-level metadata into a file-level parse result.
+///
+/// Implements decisions D-01 through D-08 from Phase 11 CONTEXT:
+/// - D-01: Confidence-based resolution, file wins on tie
+/// - D-02: Folder context fills gaps only (secondary unless strictly higher confidence)
+/// - D-05/D-06: Movie->Series promotion when folder has season
+/// - D-07/D-08: Ambiguity flagging for season-inherited-episode-missing
+///
+/// Returns the merged MediaInfo and an optional ambiguity reason string.
+/// When folder merge produces an ambiguity reason, it should take priority over
+/// generic confidence-based ambiguity in the scanner (addresses review concern
+/// about double ambiguity flagging).
+pub fn merge_folder_context(
+    mut file_info: MediaInfo,
+    ctx: &FolderContext,
+) -> (MediaInfo, Option<String>) {
+    let mut reasons: Vec<String> = Vec::new();
+
+    // Combine parent + grandparent into single best-of folder view
+    let folder = merge_folder_levels(&ctx.parent, &ctx.grandparent);
+    let Some(folder) = folder else {
+        return (file_info, None); // No folder context available
+    };
+
+    // D-05/D-06: Media type promotion (Movie -> Series when folder has season)
+    // Only promote when folder has season metadata (D-06: title-only folder does NOT promote)
+    if file_info.media_type == MediaType::Movie && folder.season.is_some() {
+        file_info.media_type = MediaType::Series;
+        file_info.confidence = ParseConfidence::Medium;
+        reasons.push(
+            "media type promoted from Movie to Series (folder has season metadata)".into(),
+        );
+    }
+
+    // D-01/D-02: Season -- gap-fill or confidence-based override
+    if file_info.season.is_none() {
+        if let Some(s) = folder.season {
+            file_info.season = Some(s);
+            reasons.push(format!("season {} inherited from folder", s));
+        }
+    } else if let Some(fs) = folder.season {
+        // File already has season -- only override if folder confidence is STRICTLY higher (D-01)
+        if folder.confidence.is_higher_than(&file_info.confidence) {
+            file_info.season = Some(fs);
+            reasons.push(format!(
+                "season overridden to {} from folder (higher confidence)",
+                fs
+            ));
+        }
+        // Equal confidence: file wins (D-01 tiebreaker) -- no change
+    }
+
+    // D-01/D-02: Title gap-fill
+    // Only replace if file title is empty (gap fill). Non-empty file title always wins
+    // at equal or lower folder confidence.
+    if file_info.title.is_empty() {
+        if !folder.title.is_empty() {
+            file_info.title = folder.title.clone();
+        }
+    } else if !folder.title.is_empty() && folder.confidence.is_higher_than(&file_info.confidence) {
+        file_info.title = folder.title.clone();
+    }
+
+    // D-01/D-02: Year gap-fill or confidence-based override
+    if file_info.year.is_none()
+        || (folder.year.is_some() && folder.confidence.is_higher_than(&file_info.confidence))
+    {
+        file_info.year = folder.year.or(file_info.year);
+    }
+
+    // D-07/D-08: Missing episode after season inheritance
+    // Flag when we have a series with season but no episodes, AND we inherited something
+    if file_info.season.is_some()
+        && file_info.episodes.is_empty()
+        && file_info.media_type == MediaType::Series
+        && !reasons.is_empty()
+    {
+        // Only add this if we actually inherited season or promoted type
+        if reasons
+            .iter()
+            .any(|r| r.contains("season") || r.contains("promoted"))
+        {
+            reasons.push("season inherited from folder, episode missing".into());
+        }
+    }
+
+    let ambiguity = if reasons.is_empty() {
+        None
+    } else {
+        Some(reasons.join("; "))
+    };
+    (file_info, ambiguity)
 }
 
 #[cfg(test)]
@@ -407,5 +583,345 @@ mod tests {
         // Movies should NOT get a default season
         let info = parse_filename("Inception.2010.1080p.BluRay.mkv").unwrap();
         assert_eq!(info.season, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // merge_folder_levels tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn merge_folder_levels_both_none_returns_none() {
+        let result = merge_folder_levels(&None, &None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn merge_folder_levels_parent_only() {
+        let parent = MediaInfo {
+            title: "Show".into(),
+            season: Some(2),
+            ..Default::default()
+        };
+        let result = merge_folder_levels(&Some(parent), &None).unwrap();
+        assert_eq!(result.title, "Show");
+        assert_eq!(result.season, Some(2));
+    }
+
+    #[test]
+    fn merge_folder_levels_grandparent_only() {
+        let gp = MediaInfo {
+            title: "Show".into(),
+            year: Some(2020),
+            ..Default::default()
+        };
+        let result = merge_folder_levels(&None, &Some(gp)).unwrap();
+        assert_eq!(result.title, "Show");
+        assert_eq!(result.year, Some(2020));
+    }
+
+    #[test]
+    fn merge_folder_levels_season_only_parent_uses_grandparent_title() {
+        // Plex convention: "Game of Thrones/Season 02/file.mkv"
+        let parent = MediaInfo {
+            title: "Season 02".into(),
+            season: Some(2),
+            ..Default::default()
+        };
+        let gp = MediaInfo {
+            title: "Game of Thrones".into(),
+            year: Some(2011),
+            ..Default::default()
+        };
+        let result = merge_folder_levels(&Some(parent), &Some(gp)).unwrap();
+        assert_eq!(result.title, "Game of Thrones"); // grandparent title
+        assert_eq!(result.season, Some(2)); // parent season
+        assert_eq!(result.year, Some(2011)); // grandparent year (parent had None)
+    }
+
+    #[test]
+    fn merge_folder_levels_parent_season_wins_over_grandparent() {
+        // Conflicting seasons: parent=2, grandparent=5 -> parent wins
+        let parent = MediaInfo {
+            title: "Fire Country".into(),
+            season: Some(2),
+            ..Default::default()
+        };
+        let gp = MediaInfo {
+            title: "Shows".into(),
+            season: Some(5),
+            ..Default::default()
+        };
+        let result = merge_folder_levels(&Some(parent), &Some(gp)).unwrap();
+        assert_eq!(result.season, Some(2)); // parent season wins
+        assert_eq!(result.title, "Fire Country"); // parent title wins (not season-only)
+    }
+
+    #[test]
+    fn merge_folder_levels_parent_year_wins_over_grandparent() {
+        let parent = MediaInfo {
+            title: "Show".into(),
+            year: Some(2024),
+            ..Default::default()
+        };
+        let gp = MediaInfo {
+            title: "Collection".into(),
+            year: Some(2020),
+            ..Default::default()
+        };
+        let result = merge_folder_levels(&Some(parent), &Some(gp)).unwrap();
+        assert_eq!(result.year, Some(2024)); // parent year wins
+    }
+
+    #[test]
+    fn is_season_only_title_detects_patterns() {
+        assert!(is_season_only_title("Season 02"));
+        assert!(is_season_only_title("season 5"));
+        assert!(is_season_only_title("Season  3")); // extra space
+        assert!(!is_season_only_title("Fire Country S2"));
+        assert!(!is_season_only_title("Breaking Bad"));
+        assert!(!is_season_only_title("Season")); // no number
+        assert!(!is_season_only_title("")); // empty
+    }
+
+    // -----------------------------------------------------------------------
+    // merge_folder_context tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn merge_empty_folder_context_returns_unchanged() {
+        let file = MediaInfo {
+            title: "Test".into(),
+            ..Default::default()
+        };
+        let ctx = FolderContext::default();
+        let (result, ambiguity) = merge_folder_context(file, &ctx);
+        assert_eq!(result.title, "Test");
+        assert!(ambiguity.is_none());
+    }
+
+    #[test]
+    fn merge_fills_season_gap_from_folder() {
+        // D-02: file has no season, folder has season=2 -> inherited
+        let file = MediaInfo {
+            title: "Fire Country".into(),
+            media_type: MediaType::Series,
+            episodes: vec![1],
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "Fire Country".into(),
+            season: Some(2),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, ambiguity) = merge_folder_context(file, &ctx);
+        assert_eq!(result.season, Some(2));
+        assert!(ambiguity
+            .as_ref()
+            .unwrap()
+            .contains("season 2 inherited from folder"));
+    }
+
+    #[test]
+    fn merge_file_wins_tiebreaker_on_equal_confidence() {
+        // D-01: file Medium + folder Medium -> file wins
+        let file = MediaInfo {
+            title: "Show".into(),
+            season: Some(3),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            season: Some(2),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, _) = merge_folder_context(file, &ctx);
+        assert_eq!(result.season, Some(3)); // file season kept
+    }
+
+    #[test]
+    fn merge_folder_wins_on_higher_confidence() {
+        // D-01: file Medium + folder High -> folder wins
+        let file = MediaInfo {
+            title: "Show".into(),
+            season: Some(3),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            season: Some(2),
+            confidence: ParseConfidence::High,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, ambiguity) = merge_folder_context(file, &ctx);
+        assert_eq!(result.season, Some(2)); // folder season wins
+        assert!(ambiguity.as_ref().unwrap().contains("overridden"));
+    }
+
+    #[test]
+    fn merge_movie_promoted_to_series_when_folder_has_season() {
+        // D-05: Movie + folder.season -> Series, flagged ambiguous
+        let file = MediaInfo {
+            title: "Fire Country".into(),
+            media_type: MediaType::Movie,
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "Fire Country S2".into(),
+            season: Some(2),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, ambiguity) = merge_folder_context(file, &ctx);
+        assert_eq!(result.media_type, MediaType::Series);
+        assert_eq!(result.season, Some(2));
+        assert!(ambiguity.as_ref().unwrap().contains("promoted"));
+        assert!(ambiguity.as_ref().unwrap().contains("Movie to Series"));
+    }
+
+    #[test]
+    fn merge_no_promotion_without_season() {
+        // D-06: folder has title only (no season) -> no promotion
+        let file = MediaInfo {
+            title: "Breaking Bad".into(),
+            media_type: MediaType::Movie,
+            confidence: ParseConfidence::Low,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "Breaking Bad".into(),
+            confidence: ParseConfidence::Low,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, ambiguity) = merge_folder_context(file, &ctx);
+        assert_eq!(result.media_type, MediaType::Movie); // stays Movie
+        assert!(ambiguity.is_none());
+    }
+
+    #[test]
+    fn merge_flags_missing_episode_after_season_inheritance() {
+        // D-07/D-08: season inherited, no episode -> specific ambiguity reason
+        let file = MediaInfo {
+            title: "Fire Country".into(),
+            media_type: MediaType::Movie, // will be promoted
+            episodes: vec![],
+            confidence: ParseConfidence::Low,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "Fire Country".into(),
+            season: Some(2),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, ambiguity) = merge_folder_context(file, &ctx);
+        assert_eq!(result.media_type, MediaType::Series); // promoted
+        let reason = ambiguity.unwrap();
+        assert!(
+            reason.contains("season inherited from folder, episode missing"),
+            "got: {reason}"
+        );
+    }
+
+    #[test]
+    fn merge_grandparent_title_used_for_season_folder() {
+        // D-03/D-04: Plex convention with two-level context
+        let file = MediaInfo {
+            title: "Game of Thrones".into(),
+            episodes: vec![5],
+            media_type: MediaType::Series,
+            confidence: ParseConfidence::High,
+            ..Default::default()
+        };
+        let parent = MediaInfo {
+            title: "Season 02".into(),
+            season: Some(2),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let grandparent = MediaInfo {
+            title: "Game of Thrones".into(),
+            year: Some(2011),
+            confidence: ParseConfidence::Low,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(parent),
+            grandparent: Some(grandparent),
+        };
+        let (result, _) = merge_folder_context(file, &ctx);
+        // File already had season=None, so folder fills gap
+        assert_eq!(result.season, Some(2));
+        // Title stays from file (High confidence file title beats folder)
+        assert_eq!(result.title, "Game of Thrones");
+    }
+
+    #[test]
+    fn merge_year_gap_filled_from_folder() {
+        // Year gap-fill: file has no year, folder has year -> inherited
+        let file = MediaInfo {
+            title: "Hostage".into(),
+            media_type: MediaType::Movie,
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "Hostage".into(),
+            year: Some(2020),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, _) = merge_folder_context(file, &ctx);
+        assert_eq!(result.year, Some(2020)); // year inherited
+    }
+
+    #[test]
+    fn merge_title_gap_filled_when_file_title_empty() {
+        let file = MediaInfo {
+            title: String::new(),
+            confidence: ParseConfidence::Low,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "My Show".into(),
+            confidence: ParseConfidence::Medium,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, _) = merge_folder_context(file, &ctx);
+        assert_eq!(result.title, "My Show");
     }
 }
