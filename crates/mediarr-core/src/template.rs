@@ -1063,8 +1063,7 @@ mod tests {
                 &info,
             )
             .unwrap();
-        let expected =
-            PathBuf::from("The Office (2005)").join("The Office (2005) - S02E03.mkv");
+        let expected = PathBuf::from("The Office (2005)").join("The Office (2005) - S02E03.mkv");
         assert_eq!(result, expected);
     }
 

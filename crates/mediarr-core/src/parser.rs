@@ -299,9 +299,8 @@ pub fn merge_folder_context(
     if file_info.media_type == MediaType::Movie && folder.season.is_some() {
         file_info.media_type = MediaType::Series;
         file_info.confidence = ParseConfidence::Medium;
-        reasons.push(
-            "media type promoted from Movie to Series (folder has season metadata)".into(),
-        );
+        reasons
+            .push("media type promoted from Movie to Series (folder has season metadata)".into());
     }
 
     // D-01/D-02: Season -- gap-fill or confidence-based override

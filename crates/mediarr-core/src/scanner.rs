@@ -302,10 +302,7 @@ impl Scanner {
         // use grandparent-of-parent as scan_root so both parent and grandparent are available.
         // If file is at /a/b/c/file.mkv, dir=/a/b/c, scan_root=/a/b (allows parent=c, grandparent=b)
         let dir = path.parent().unwrap_or_else(|| Path::new(""));
-        let scan_root_for_file = dir
-            .parent()
-            .and_then(|p| p.parent())
-            .unwrap_or(dir);
+        let scan_root_for_file = dir.parent().and_then(|p| p.parent()).unwrap_or(dir);
         let folder_ctx = Self::parse_folder_context(dir, scan_root_for_file);
 
         // Merge folder context (D-01 through D-08)
@@ -1265,8 +1262,11 @@ mod tests {
         let scanner = Scanner::new(config_with_output(output.path()));
         let results = scanner.scan_folder(source.path()).unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].media_info.season, Some(2),
-            "season should be gap-filled from parent folder 'Fire Country S2'");
+        assert_eq!(
+            results[0].media_info.season,
+            Some(2),
+            "season should be gap-filled from parent folder 'Fire Country S2'"
+        );
     }
 
     #[test]
@@ -1362,8 +1362,11 @@ mod tests {
 
         let scanner = Scanner::new(config_with_output(output.path()));
         let result = scanner.scan_file(&video).unwrap();
-        assert_eq!(result.media_info.season, Some(2),
-            "season should be gap-filled from parent folder 'Fire Country S2'");
+        assert_eq!(
+            result.media_info.season,
+            Some(2),
+            "season should be gap-filled from parent folder 'Fire Country S2'"
+        );
     }
 
     #[test]
