@@ -334,10 +334,12 @@ pub fn merge_folder_context(
     }
 
     // D-01/D-02: Year gap-fill or confidence-based override
-    if file_info.year.is_none()
-        || (folder.year.is_some() && folder.confidence.is_higher_than(&file_info.confidence))
-    {
-        file_info.year = folder.year.or(file_info.year);
+    if file_info.year.is_none() {
+        if let Some(y) = folder.year {
+            file_info.year = Some(y);
+        }
+    } else if folder.year.is_some() && folder.confidence.is_higher_than(&file_info.confidence) {
+        file_info.year = folder.year;
     }
 
     // D-07/D-08: Missing episode after season inheritance
