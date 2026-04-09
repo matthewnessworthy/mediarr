@@ -37,6 +37,22 @@ pub enum ParseConfidence {
     Low,
 }
 
+impl ParseConfidence {
+    /// Returns true if self is strictly higher confidence than other.
+    /// Used for D-01: confidence-based resolution with file-wins tiebreaker.
+    pub fn is_higher_than(&self, other: &Self) -> bool {
+        self.rank() > other.rank()
+    }
+
+    fn rank(&self) -> u8 {
+        match self {
+            ParseConfidence::Low => 0,
+            ParseConfidence::Medium => 1,
+            ParseConfidence::High => 2,
+        }
+    }
+}
+
 /// Parsed metadata from a media filename.
 ///
 /// Produced by the parser module after running `hunch` over a filename.
@@ -69,6 +85,17 @@ pub struct MediaInfo {
     pub language: Option<String>,
     /// Parser confidence in the overall result.
     pub confidence: ParseConfidence,
+}
+
+/// Metadata parsed from parent folder names surrounding a video file.
+/// Used to fill gaps in file-level parse results during scanning.
+/// Transient -- not stored in ScanResult or serialized.
+#[derive(Debug, Clone, Default)]
+pub struct FolderContext {
+    /// Parsed metadata from the immediate parent directory.
+    pub parent: Option<MediaInfo>,
+    /// Parsed metadata from the grandparent directory (two levels up from file).
+    pub grandparent: Option<MediaInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -818,5 +845,38 @@ debounce_seconds = 5
         assert_eq!(s.output_dir, Some("/custom/output".to_string()));
         assert_eq!(s.operation, Some(RenameOperation::Copy));
         assert!(s.conflict_strategy.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // ParseConfidence ordering tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn confidence_high_is_higher_than_medium() {
+        assert!(ParseConfidence::High.is_higher_than(&ParseConfidence::Medium));
+    }
+
+    #[test]
+    fn confidence_medium_is_higher_than_low() {
+        assert!(ParseConfidence::Medium.is_higher_than(&ParseConfidence::Low));
+    }
+
+    #[test]
+    fn confidence_equal_is_not_higher() {
+        assert!(!ParseConfidence::High.is_higher_than(&ParseConfidence::High));
+        assert!(!ParseConfidence::Medium.is_higher_than(&ParseConfidence::Medium));
+        assert!(!ParseConfidence::Low.is_higher_than(&ParseConfidence::Low));
+    }
+
+    #[test]
+    fn confidence_low_is_not_higher_than_medium() {
+        assert!(!ParseConfidence::Low.is_higher_than(&ParseConfidence::Medium));
+    }
+
+    #[test]
+    fn folder_context_default_is_empty() {
+        let ctx = FolderContext::default();
+        assert!(ctx.parent.is_none());
+        assert!(ctx.grandparent.is_none());
     }
 }
