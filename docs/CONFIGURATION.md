@@ -29,7 +29,7 @@ create_directories = true
 
 [templates]
 movie = "{Title} ({year})/{Title} ({year}).{ext}"
-series = "{Title}/{Title} - S{season:02}E{episode:02}.{ext}"
+series = "{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}"
 
 [subtitles]
 enabled = true
@@ -75,7 +75,7 @@ The only environment variable recognized is `RUST_LOG`, which controls the traci
 | Setting | Type | Required | Default | Description |
 |---------|------|----------|---------|-------------|
 | `templates.movie` | String | No | `{Title} ({year})/{Title} ({year}).{ext}` | Naming template for movie files. |
-| `templates.series` | String | No | `{Title}/{Title} - S{season:02}E{episode:02}.{ext}` | Naming template for series (TV and anime) files. |
+| `templates.series` | String | No | `{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}` | Naming template for series (TV and anime) files. |
 
 ### Template syntax
 
@@ -218,7 +218,7 @@ All default values in one place, as defined in the source code (`crates/mediarr-
 | `general.conflict_strategy` | `Skip` |
 | `general.create_directories` | `true` |
 | `templates.movie` | `{Title} ({year})/{Title} ({year}).{ext}` |
-| `templates.series` | `{Title}/{Title} - S{season:02}E{episode:02}.{ext}` |
+| `templates.series` | `{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}` |
 | `subtitles.enabled` | `true` |
 | `subtitles.naming_pattern` | `{video_name}.{lang}.{type}.{ext}` |
 | `subtitles.preferred_languages` | `[]` (empty) |

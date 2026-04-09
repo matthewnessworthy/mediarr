@@ -125,7 +125,7 @@ Templates use `{variable}` syntax with optional modifiers. Defaults:
 | Media Type | Default Template |
 |------------|-----------------|
 | Movie | `{Title} ({year})/{Title} ({year}).{ext}` |
-| Series | `{Title}/{Title} - S{season:02}E{episode:02}.{ext}` |
+| Series | `{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}` |
 
 Available variables: `title`, `Title`, `year`, `season`, `episode`, `ext`, `resolution`, `video_codec`, `audio_codec`, `source`, `release_group`, `language`.
 

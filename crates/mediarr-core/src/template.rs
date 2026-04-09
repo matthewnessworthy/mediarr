@@ -1058,9 +1058,13 @@ mod tests {
         let mut info = series_info();
         info.title = "the office".to_string();
         let result = engine
-            .render("{Title}/{Title} - S{season:02}E{episode:02}.{ext}", &info)
+            .render(
+                "{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}",
+                &info,
+            )
             .unwrap();
-        let expected = PathBuf::from("The Office").join("The Office - S02E03.mkv");
+        let expected =
+            PathBuf::from("The Office (2005)").join("The Office (2005) - S02E03.mkv");
         assert_eq!(result, expected);
     }
 
