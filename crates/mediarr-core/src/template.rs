@@ -317,7 +317,7 @@ fn apply_modifier(value: &str, modifier: &str) -> Result<String> {
 fn collapse_empty_groups(input: &str) -> String {
     static EMPTY_GROUP_RE: LazyLock<Regex> = LazyLock::new(|| {
         // Match optional leading separator + space, then empty brackets, then optional trailing space
-        Regex::new(r"(?:\s*[-–—]\s*)?[\s]*[(\[]\s*[)\]]\s*").expect("valid regex")
+        Regex::new(r"(?:\s*[-–—]\s*)?[\s]*[(\[]\s*[)\]]").expect("valid regex")
     });
     let result = EMPTY_GROUP_RE.replace_all(input, "");
     // Clean up any resulting double spaces
@@ -1158,6 +1158,31 @@ mod tests {
             .render("{Title} - ({year})/{Title}.{ext}", &info)
             .unwrap();
         assert_eq!(result, PathBuf::from("Hostage/Hostage.mkv"));
+    }
+
+    #[test]
+    fn render_empty_year_preserves_space_before_dash_separator() {
+        // Regression: collapse_empty_groups was eating the trailing space after "()",
+        // turning "Fire Country () - S01E01.mp4" into "Fire Country- S01E01.mp4"
+        let engine = super::TemplateEngine::new();
+        let info = MediaInfo {
+            title: "Fire Country".to_string(),
+            media_type: MediaType::Series,
+            year: None,
+            season: Some(1),
+            episodes: vec![1],
+            container: "mp4".to_string(),
+            ..series_info()
+        };
+        let result = engine
+            .render(
+                "{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}",
+                &info,
+            )
+            .unwrap();
+        let expected = PathBuf::from("Fire Country")
+            .join("Fire Country - S01E01.mp4");
+        assert_eq!(result, expected);
     }
 
     #[test]
