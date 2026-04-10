@@ -1180,8 +1180,7 @@ mod tests {
                 &info,
             )
             .unwrap();
-        let expected = PathBuf::from("Fire Country")
-            .join("Fire Country - S01E01.mp4");
+        let expected = PathBuf::from("Fire Country").join("Fire Country - S01E01.mp4");
         assert_eq!(result, expected);
     }
 
