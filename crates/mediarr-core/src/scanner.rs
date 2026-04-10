@@ -1159,18 +1159,22 @@ mod tests {
         // Should NOT produce ".../Hostage (2020)/Hostage (2020)/Hostage (2020).mkv"
         // Correct result: ".../Hostage (2020)/Hostage (2020).mkv"
         // (one directory component, one filename — the filename contains the year too)
-        let path_str = result.proposed_path.to_str().unwrap();
-        assert!(
-            !path_str.contains("Hostage (2020)/Hostage (2020)/"),
-            "proposed path should not double-nest: {:?}",
-            result.proposed_path
-        );
-        // Verify it ends with the correct structure
-        assert!(
-            path_str.ends_with("Hostage (2020)/Hostage (2020).mkv"),
-            "proposed path should end with Hostage (2020)/Hostage (2020).mkv, got {:?}",
-            result.proposed_path
-        );
+        let components: Vec<_> = result.proposed_path.components().collect();
+        let len = components.len();
+        assert!(len >= 2, "expected at least 2 path components, got {:?}", result.proposed_path);
+        let folder = components[len - 2].as_os_str().to_str().unwrap();
+        let file = components[len - 1].as_os_str().to_str().unwrap();
+        assert_eq!(folder, "Hostage (2020)");
+        assert_eq!(file, "Hostage (2020).mkv");
+        // Should NOT double-nest
+        if len >= 3 {
+            let parent = components[len - 3].as_os_str().to_str().unwrap();
+            assert_ne!(
+                parent, "Hostage (2020)",
+                "proposed path should not double-nest: {:?}",
+                result.proposed_path
+            );
+        }
     }
 
     #[test]
