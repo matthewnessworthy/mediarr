@@ -1161,7 +1161,11 @@ mod tests {
         // (one directory component, one filename — the filename contains the year too)
         let components: Vec<_> = result.proposed_path.components().collect();
         let len = components.len();
-        assert!(len >= 2, "expected at least 2 path components, got {:?}", result.proposed_path);
+        assert!(
+            len >= 2,
+            "expected at least 2 path components, got {:?}",
+            result.proposed_path
+        );
         let folder = components[len - 2].as_os_str().to_str().unwrap();
         let file = components[len - 1].as_os_str().to_str().unwrap();
         assert_eq!(folder, "Hostage (2020)");
