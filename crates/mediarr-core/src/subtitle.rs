@@ -67,6 +67,8 @@ impl SubtitleDiscovery {
     /// `video_path` is the original video file path on disk.
     /// `video_proposed_stem` is the proposed output stem (without extension)
     /// that subtitles should follow.
+    /// `video_output_dir` is the directory component of the video's proposed path;
+    /// subtitle proposed paths are placed under this directory.
     ///
     /// Returns a list of `SubtitleMatch` entries with proposed paths generated
     /// from the video's proposed stem.
@@ -74,6 +76,7 @@ impl SubtitleDiscovery {
         &self,
         video_path: &Path,
         video_proposed_stem: &str,
+        video_output_dir: &Path,
     ) -> Vec<SubtitleMatch> {
         let mut raw: Vec<RawSubtitle> = Vec::new();
 
@@ -91,12 +94,12 @@ impl SubtitleDiscovery {
         }
 
         raw.into_iter()
-            .map(|r| self.enrich(r, video_proposed_stem))
+            .map(|r| self.enrich(r, video_proposed_stem, video_output_dir))
             .collect()
     }
 
     /// Enrich a raw subtitle with language, type, and proposed path.
-    fn enrich(&self, raw: RawSubtitle, video_proposed_stem: &str) -> SubtitleMatch {
+    fn enrich(&self, raw: RawSubtitle, video_proposed_stem: &str, video_output_dir: &Path) -> SubtitleMatch {
         let filename = raw
             .source_path
             .file_name()
@@ -124,6 +127,7 @@ impl SubtitleDiscovery {
             .unwrap_or("srt");
 
         let proposed_path = generate_proposed_path(
+            video_output_dir,
             video_proposed_stem,
             &language,
             subtitle_type.as_ref(),
@@ -504,12 +508,14 @@ fn detect_subtitle_type(filename: &str) -> Option<SubtitleType> {
     None
 }
 
-/// Generate a proposed subtitle path from video stem, language, type, and extension.
+/// Generate a proposed subtitle path from video output directory, stem, language, type, and extension.
 ///
-/// Format: `{video_proposed_stem}.{lang}.{type}.{ext}` when type is present,
-/// or `{video_proposed_stem}.{lang}.{ext}` when no type.
+/// Format: `{video_output_dir}/{video_proposed_stem}.{lang}.{type}.{ext}` when type is present,
+/// or `{video_output_dir}/{video_proposed_stem}.{lang}.{ext}` when no type.
 /// Collapses adjacent dots to prevent ".." in output.
+/// An empty `video_output_dir` produces a bare filename (no leading separator).
 fn generate_proposed_path(
+    video_output_dir: &Path,
     video_proposed_stem: &str,
     language: &str,
     sub_type: Option<&SubtitleType>,
@@ -530,7 +536,7 @@ fn generate_proposed_path(
         name = name.replace("..", ".");
     }
 
-    PathBuf::from(name)
+    video_output_dir.join(name)
 }
 
 #[cfg(test)]
@@ -562,7 +568,7 @@ mod tests {
         touch(&dir.path().join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let sidecar: Vec<_> = results
             .iter()
@@ -583,7 +589,7 @@ mod tests {
         touch(&media_dir.join("Movie.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie", Path::new(""));
 
         let sidecar: Vec<_> = results
             .iter()
@@ -608,7 +614,7 @@ mod tests {
         touch(&subs_dir.join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let subfolder: Vec<_> = results
             .iter()
@@ -630,7 +636,7 @@ mod tests {
         touch(&sub_dir.join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let subfolder: Vec<_> = results
             .iter()
@@ -654,7 +660,7 @@ mod tests {
         touch(&eng_dir.join("Movie.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let nested: Vec<_> = results
             .iter()
@@ -675,7 +681,7 @@ mod tests {
         touch(&en_dir.join("Movie.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let nested: Vec<_> = results
             .iter()
@@ -697,7 +703,7 @@ mod tests {
         touch(&dir.path().join("Movie.sub"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let vobsub: Vec<_> = results
             .iter()
@@ -715,7 +721,7 @@ mod tests {
         // No .sub file
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let vobsub: Vec<_> = results
             .iter()
@@ -741,7 +747,7 @@ mod tests {
             vobsub_pairs: true,
         };
         let disc = SubtitleDiscovery::new(toggles, vec!["en".into()]);
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let sidecar: Vec<_> = results
             .iter()
@@ -838,19 +844,19 @@ mod tests {
 
     #[test]
     fn path_without_type() {
-        let path = generate_proposed_path("Movie", "en", None, "srt");
+        let path = generate_proposed_path(Path::new(""), "Movie", "en", None, "srt");
         assert_eq!(path, PathBuf::from("Movie.en.srt"));
     }
 
     #[test]
     fn path_with_type() {
-        let path = generate_proposed_path("Movie", "en", Some(&SubtitleType::Forced), "srt");
+        let path = generate_proposed_path(Path::new(""), "Movie", "en", Some(&SubtitleType::Forced), "srt");
         assert_eq!(path, PathBuf::from("Movie.en.forced.srt"));
     }
 
     #[test]
     fn path_uses_iso_639_1_code() {
-        let path = generate_proposed_path("Movie", "en", None, "srt");
+        let path = generate_proposed_path(Path::new(""), "Movie", "en", None, "srt");
         // Should use 2-letter code
         assert!(path.to_str().unwrap().contains(".en."));
     }
@@ -858,7 +864,7 @@ mod tests {
     #[test]
     fn path_collapses_empty_type_dots() {
         // Simulate a case where type would be empty string
-        let result = generate_proposed_path("Movie", "en", None, "srt");
+        let result = generate_proposed_path(Path::new(""), "Movie", "en", None, "srt");
         let s = result.to_str().unwrap();
         assert!(!s.contains(".."), "should not have double dots");
     }
@@ -959,19 +965,19 @@ mod tests {
 
     #[test]
     fn path_with_639_3_language_code() {
-        let path = generate_proposed_path("Movie", "jpn", None, "srt");
+        let path = generate_proposed_path(Path::new(""), "Movie", "jpn", None, "srt");
         assert_eq!(path, PathBuf::from("Movie.jpn.srt"));
     }
 
     #[test]
     fn path_with_und_language() {
-        let path = generate_proposed_path("Movie", "und", None, "srt");
+        let path = generate_proposed_path(Path::new(""), "Movie", "und", None, "srt");
         assert_eq!(path, PathBuf::from("Movie.und.srt"));
     }
 
     #[test]
     fn path_with_commentary_type() {
-        let path = generate_proposed_path("Movie", "en", Some(&SubtitleType::Commentary), "srt");
+        let path = generate_proposed_path(Path::new(""), "Movie", "en", Some(&SubtitleType::Commentary), "srt");
         assert_eq!(path, PathBuf::from("Movie.en.commentary.srt"));
     }
 
@@ -989,7 +995,7 @@ mod tests {
         touch(&media_dir.join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie", Path::new(""));
 
         let sidecar: Vec<_> = results
             .iter()
@@ -1027,7 +1033,7 @@ mod tests {
             },
             vec!["en".into()],
         );
-        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie", Path::new(""));
 
         let nested: Vec<_> = results
             .iter()
@@ -1047,7 +1053,54 @@ mod tests {
         // No subtitle files at all
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie");
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie", Path::new(""));
         assert!(results.is_empty(), "should find no subtitles in empty dir");
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: subtitle proposed_path includes video output directory (R001)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn path_includes_video_output_dir() {
+        let output_dir = Path::new("Movies/Title (2024)");
+        let path = generate_proposed_path(output_dir, "Title (2024)", "en", None, "srt");
+        assert_eq!(path, PathBuf::from("Movies/Title (2024)/Title (2024).en.srt"));
+        assert_eq!(path.parent().unwrap(), output_dir);
+    }
+
+    #[test]
+    fn path_empty_output_dir_produces_bare_filename() {
+        let path = generate_proposed_path(Path::new(""), "Movie", "en", None, "srt");
+        assert_eq!(path, PathBuf::from("Movie.en.srt"));
+    }
+
+    #[test]
+    fn path_with_output_dir_and_type() {
+        let output_dir = Path::new("output/TV");
+        let path = generate_proposed_path(output_dir, "Show S01E01", "en", Some(&SubtitleType::Forced), "srt");
+        assert_eq!(path, PathBuf::from("output/TV/Show S01E01.en.forced.srt"));
+    }
+
+    #[test]
+    fn path_special_chars_in_stem_with_output_dir() {
+        let output_dir = Path::new("output");
+        let path = generate_proposed_path(output_dir, "Movie [2024] (1080p)", "en", None, "srt");
+        assert_eq!(path, PathBuf::from("output/Movie [2024] (1080p).en.srt"));
+    }
+
+    #[test]
+    fn discover_for_video_proposed_path_includes_output_dir() {
+        let dir = TempDir::new().unwrap();
+        let media_dir = dir.path().join("media");
+        touch(&media_dir.join("Movie.mkv"));
+        touch(&media_dir.join("Movie.en.srt"));
+
+        let disc = discovery_all_enabled();
+        let output_dir = Path::new("Movies/Movie (2024)");
+        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie (2024)", output_dir);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].proposed_path.parent().unwrap(), output_dir);
     }
 }
