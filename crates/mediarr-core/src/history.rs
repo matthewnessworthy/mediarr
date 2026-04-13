@@ -9,11 +9,13 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 use tracing::{debug, info, warn};
 
+use crate::config::GeneralConfig;
 use crate::error::{MediError, Result};
 use crate::fs_util;
+use crate::renamer::{RenamePlan, RenamePlanEntry, Renamer};
 use crate::types::{
     BatchSummary, MediaInfo, RenameRecord, RenameResult, ReviewQueueEntry, ReviewStatus,
-    UndoEligibility, UndoIssue, WatcherAction, WatcherEvent,
+    SubtitleMatch, UndoEligibility, UndoIssue, WatcherAction, WatcherEvent,
 };
 
 /// SQL schema for the rename history table.
@@ -193,6 +195,62 @@ impl HistoryDb {
 
         self.record_batch(&records)?;
         Ok(batch_id)
+    }
+
+    /// Execute a rename for a review queue entry and record the result to history.
+    ///
+    /// Builds a rename plan from the entry (including subtitles), executes it,
+    /// and records successful renames to the history database. Does NOT update
+    /// the review status — the caller is responsible for that.
+    ///
+    /// Returns `Ok(())` on success, or an error if any rename fails.
+    pub fn execute_review_rename(
+        &self,
+        entry: &ReviewQueueEntry,
+        general_config: &GeneralConfig,
+    ) -> Result<()> {
+        let mut plan_entries = vec![RenamePlanEntry {
+            source_path: entry.source_path.clone(),
+            dest_path: entry.proposed_path.clone(),
+        }];
+
+        if let Ok(subtitles) = serde_json::from_str::<Vec<SubtitleMatch>>(&entry.subtitles_json) {
+            for sub in &subtitles {
+                plan_entries.push(RenamePlanEntry {
+                    source_path: sub.source_path.clone(),
+                    dest_path: sub.proposed_path.clone(),
+                });
+            }
+        }
+
+        let plan = RenamePlan {
+            entries: plan_entries,
+        };
+
+        let renamer = Renamer::from_config(general_config);
+        let results = renamer.execute(&plan);
+        let all_success = results.iter().all(|r| r.success);
+
+        if !all_success {
+            let errors: Vec<String> = results
+                .iter()
+                .filter(|r| !r.success)
+                .filter_map(|r| r.error.clone())
+                .collect();
+            return Err(MediError::RenameBatchFailed(errors.join("; ")));
+        }
+
+        let media_info: MediaInfo =
+            serde_json::from_str(&entry.media_info_json).unwrap_or_default();
+
+        let media_info_map: std::collections::HashMap<String, MediaInfo> = std::iter::once((
+            entry.source_path.to_string_lossy().to_string(),
+            media_info,
+        ))
+        .collect();
+
+        self.record_rename_results(&results, &media_info_map)?;
+        Ok(())
     }
 
     /// List recent rename batches in reverse chronological order.

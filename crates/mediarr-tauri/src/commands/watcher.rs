@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use tauri::{Emitter, State};
-use tracing::{error, info};
+use tauri::State;
+use tracing::info;
 
-use mediarr_core::{ReviewQueueEntry, ReviewStatus, WatcherConfig, WatcherEvent, WatcherManager};
+use mediarr_core::{ReviewQueueEntry, ReviewStatus, WatcherConfig, WatcherEvent};
 
 use crate::error::{CommandError, CommandResult};
-use crate::state::{ManagedState, WatcherHandle};
+use crate::state::ManagedState;
 
 /// List all configured folder watchers from the current config.
 #[tauri::command]
@@ -66,23 +66,19 @@ pub fn update_review_status(
 
 /// Start a folder watcher for the given path.
 ///
-/// Spawns a dedicated OS thread with its own single-threaded tokio runtime
-/// because `WatcherManager` holds a `rusqlite::Connection` which is `!Send`.
-/// The watcher config must already exist in the application config.
-///
-/// Waits for the watcher thread to signal successful initialization before
-/// returning. If the thread fails during setup (DB open, debouncer creation,
-/// path watch), the error is propagated back to the frontend instead of being
-/// silently swallowed.
+/// Spawns a dedicated OS thread via [`crate::spawn_watcher_thread`]. Waits for
+/// successful initialization before returning. If setup fails, the error is
+/// propagated to the frontend.
 #[tauri::command]
 pub fn start_watcher(
     app: tauri::AppHandle,
     state: State<'_, ManagedState>,
     path: String,
 ) -> CommandResult<()> {
+    use tauri::Emitter;
+
     let mut state = state.lock().map_err(|_| CommandError::StateLock)?;
 
-    // Find the watcher config for this path
     let watcher_config = state
         .config
         .watchers
@@ -91,87 +87,32 @@ pub fn start_watcher(
         .cloned()
         .ok_or_else(|| CommandError::Other(format!("no watcher configured for path: {path}")))?;
 
-    // Check if already running
     if state.active_watchers.contains_key(&path) {
         return Err(CommandError::Other(format!(
             "watcher already running for path: {path}"
         )));
     }
 
-    // Resolve per-watcher settings onto the global config so Scanner and
-    // Renamer operate with watcher-specific overrides transparently.
-    let config = watcher_config.resolve_config(&state.config);
+    let resolved_config = watcher_config.resolve_config(&state.config);
     let data_path = mediarr_core::config::default_data_path()
         .map_err(|e| CommandError::Other(format!("failed to determine data path: {e}")))?;
-    let watch_path = PathBuf::from(&path);
-    let mode = watcher_config.mode;
-    let debounce = watcher_config.debounce_seconds;
 
-    // Create event emission callback for real-time frontend updates
     let app_handle = app.clone();
     let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
         Box::new(move |event: &mediarr_core::WatcherEvent| {
             let _ = app_handle.emit("watcher-event", event);
         });
 
-    // Create shutdown channel
-    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let (handle, init_rx) = crate::spawn_watcher_thread(
+        resolved_config,
+        data_path,
+        PathBuf::from(&path),
+        watcher_config.mode,
+        watcher_config.debounce_seconds,
+        on_event_callback,
+    )
+    .map_err(CommandError::Other)?;
 
-    // Init-result channel: the thread sends Ok(()) once the watcher is running,
-    // or Err(message) if initialization fails. This prevents silent thread death.
-    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
-
-    // Spawn dedicated thread with its own tokio runtime
-    let thread_name = format!("watcher-{path}");
-    let thread_handle = std::thread::Builder::new()
-        .name(thread_name.clone())
-        .spawn(move || {
-            // Open a separate HistoryDb connection for this thread
-            let db = match mediarr_core::HistoryDb::open(&data_path) {
-                Ok(db) => db,
-                Err(e) => {
-                    let msg = format!("failed to open history db: {e}");
-                    error!(path = %watch_path.display(), "{msg}");
-                    let _ = init_tx.send(Err(msg));
-                    return;
-                }
-            };
-
-            let mut watcher = WatcherManager::new(config, db);
-            watcher.set_on_event(on_event_callback);
-
-            // Create a single-threaded tokio runtime for this thread
-            let rt = match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(rt) => rt,
-                Err(e) => {
-                    let msg = format!("failed to create tokio runtime: {e}");
-                    error!(path = %watch_path.display(), "{msg}");
-                    let _ = init_tx.send(Err(msg));
-                    return;
-                }
-            };
-
-            // Run the watcher; it sends the init signal internally once the
-            // debouncer is watching and the event loop is about to start.
-            if let Err(e) = rt.block_on(watcher.run_with_init_signal(
-                &watch_path,
-                mode,
-                debounce,
-                shutdown_rx,
-                init_tx,
-            )) {
-                error!(path = %watch_path.display(), "watcher exited with error: {e}");
-            }
-        })
-        .map_err(|e| CommandError::Other(format!("failed to spawn watcher thread: {e}")))?;
-
-    // Wait for the thread to report initialization status.
-    // This blocks the Tauri command handler briefly but ensures we catch
-    // early failures (DB open, debouncer creation, path watch) instead of
-    // silently swallowing them.
     init_rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .map_err(|e| CommandError::Other(format!("watcher init timed out: {e}")))?
@@ -179,7 +120,6 @@ pub fn start_watcher(
 
     info!(path = %path, "watcher started and confirmed running");
 
-    // Persist active = true in config so watchers survive app restart
     if let Some(wc) = state
         .config
         .watchers
@@ -192,13 +132,7 @@ pub fn start_watcher(
         .map_err(|e| CommandError::Other(format!("failed to determine config path: {e}")))?;
     state.config.save(&config_path)?;
 
-    state.active_watchers.insert(
-        path,
-        WatcherHandle {
-            shutdown_tx,
-            thread_handle,
-        },
-    );
+    state.active_watchers.insert(path, handle);
 
     Ok(())
 }
@@ -240,20 +174,18 @@ pub fn stop_watcher(state: State<'_, ManagedState>, path: String) -> CommandResu
 
 /// Approve a review queue entry: execute the rename, record history, update status.
 ///
-/// Mirrors the CLI's execute_review_rename flow. Rejects stale entries where
-/// the source file no longer exists.
+/// Thin wrapper around `HistoryDb::execute_review_rename`. Rejects stale entries
+/// where the source file no longer exists.
 #[tauri::command]
 pub fn approve_review_entry(state: State<'_, ManagedState>, id: i64) -> CommandResult<()> {
     let state = state.lock().map_err(|_| CommandError::StateLock)?;
 
-    // 1. Find the pending review entry
     let entries = state.db.list_review_queue(None, None)?;
     let entry = entries
         .iter()
         .find(|e| e.id == Some(id))
         .ok_or_else(|| CommandError::Other(format!("review entry not found: {id}")))?;
 
-    // 2. Stale check: reject if source file no longer exists
     if !entry.source_path.exists() {
         state.db.update_review_status(id, ReviewStatus::Rejected)?;
         return Err(CommandError::Other(
@@ -261,64 +193,9 @@ pub fn approve_review_entry(state: State<'_, ManagedState>, id: i64) -> CommandR
         ));
     }
 
-    // 3. Build rename plan (video + subtitles)
-    let mut plan_entries = vec![mediarr_core::RenamePlanEntry {
-        source_path: entry.source_path.clone(),
-        dest_path: entry.proposed_path.clone(),
-    }];
-
-    // Parse subtitle entries from JSON and add to plan
-    if let Ok(subtitles) =
-        serde_json::from_str::<Vec<mediarr_core::SubtitleMatch>>(&entry.subtitles_json)
-    {
-        for sub in &subtitles {
-            plan_entries.push(mediarr_core::RenamePlanEntry {
-                source_path: sub.source_path.clone(),
-                dest_path: sub.proposed_path.clone(),
-            });
-        }
-    }
-
-    let plan = mediarr_core::RenamePlan {
-        entries: plan_entries,
-    };
-
-    // 4. Execute rename
-    // Review entries don't store which watcher queued them, so use
-    // global config for rename operations. Per-watcher settings apply
-    // only during auto-mode processing within the watcher thread.
-    let renamer = mediarr_core::Renamer::from_config(&state.config.general);
-    let results = renamer.execute(&plan);
-    let all_success = results.iter().all(|r| r.success);
-
-    if !all_success {
-        let errors: Vec<String> = results
-            .iter()
-            .filter(|r| !r.success)
-            .filter_map(|r| r.error.clone())
-            .collect();
-        return Err(CommandError::Other(format!(
-            "rename failed: {}",
-            errors.join("; ")
-        )));
-    }
-
-    // 5. Record to history
-    let media_info: mediarr_core::MediaInfo =
-        serde_json::from_str(&entry.media_info_json).unwrap_or_default();
-
-    let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> =
-        std::iter::once((
-            entry.source_path.to_string_lossy().to_string(),
-            media_info,
-        ))
-        .collect();
-
     state
         .db
-        .record_rename_results(&results, &media_info_map)?;
-
-    // 6. Update review status
+        .execute_review_rename(entry, &state.config.general)?;
     state.db.update_review_status(id, ReviewStatus::Approved)?;
 
     Ok(())

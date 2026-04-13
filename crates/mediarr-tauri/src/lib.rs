@@ -5,7 +5,7 @@ mod state;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use mediarr_core::{config, Config, HistoryDb, WatcherManager};
+use mediarr_core::{config, Config, HistoryDb, WatcherManager, WatcherMode};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -97,10 +97,85 @@ pub fn run() {
         });
 }
 
+/// Spawn a watcher on a dedicated OS thread with its own single-threaded tokio runtime.
+///
+/// Returns the `WatcherHandle` (shutdown channel + thread handle) and an init
+/// receiver that resolves once the watcher is running or has failed during setup.
+///
+/// Both `start_watcher` and `auto_start_watchers` use this helper to avoid
+/// duplicating the thread-spawn + DB-open + runtime-creation boilerplate.
+pub(crate) fn spawn_watcher_thread(
+    config: Config,
+    data_path: std::path::PathBuf,
+    watch_path: std::path::PathBuf,
+    mode: WatcherMode,
+    debounce: u64,
+    on_event: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send>,
+) -> std::result::Result<
+    (
+        state::WatcherHandle,
+        std::sync::mpsc::Receiver<std::result::Result<(), String>>,
+    ),
+    String,
+> {
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
+
+    let thread_name = format!("watcher-{}", watch_path.display());
+    let thread_handle = std::thread::Builder::new()
+        .name(thread_name)
+        .spawn(move || {
+            let db = match mediarr_core::HistoryDb::open(&data_path) {
+                Ok(db) => db,
+                Err(e) => {
+                    let msg = format!("failed to open history db: {e}");
+                    error!(path = %watch_path.display(), "{msg}");
+                    let _ = init_tx.send(Err(msg));
+                    return;
+                }
+            };
+
+            let mut watcher = WatcherManager::new(config, db);
+            watcher.set_on_event(on_event);
+
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let msg = format!("failed to create tokio runtime: {e}");
+                    error!(path = %watch_path.display(), "{msg}");
+                    let _ = init_tx.send(Err(msg));
+                    return;
+                }
+            };
+
+            if let Err(e) = rt.block_on(watcher.run_with_init_signal(
+                &watch_path,
+                mode,
+                debounce,
+                shutdown_rx,
+                init_tx,
+            )) {
+                error!(path = %watch_path.display(), "watcher exited with error: {e}");
+            }
+        })
+        .map_err(|e| format!("failed to spawn watcher thread: {e}"))?;
+
+    Ok((
+        state::WatcherHandle {
+            shutdown_tx,
+            thread_handle,
+        },
+        init_rx,
+    ))
+}
+
 /// Auto-start all watchers that have `active: true` in the config.
 ///
 /// Called during Tauri setup. Each watcher is spawned on a dedicated OS thread
-/// with its own single-threaded tokio runtime (same pattern as start_watcher).
+/// with its own single-threaded tokio runtime via [`spawn_watcher_thread`].
 /// Errors for individual watchers are logged but do not prevent other watchers
 /// from starting.
 fn auto_start_watchers(app: &tauri::AppHandle) {
@@ -147,11 +222,7 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
             continue;
         }
 
-        let config = state.config.clone();
-        let data_path = data_path.clone();
-        let watch_path = wc.path.clone();
-        let mode = wc.mode;
-        let debounce = wc.debounce_seconds;
+        let resolved_config = wc.resolve_config(&state.config);
 
         let app_handle = app.clone();
         let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
@@ -159,68 +230,25 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
                 let _ = app_handle.emit("watcher-event", event);
             });
 
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
-
-        let thread_name = format!("watcher-{path_str}");
-        let watch_path_thread = watch_path.clone();
-        let thread_handle = match std::thread::Builder::new().name(thread_name.clone()).spawn(
-            move || {
-                let db = match mediarr_core::HistoryDb::open(&data_path) {
-                    Ok(db) => db,
-                    Err(e) => {
-                        let msg = format!("failed to open history db: {e}");
-                        error!(path = %watch_path_thread.display(), "{msg}");
-                        let _ = init_tx.send(Err(msg));
-                        return;
-                    }
-                };
-
-                let mut watcher = WatcherManager::new(config, db);
-                watcher.set_on_event(on_event_callback);
-
-                let rt = match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        let msg = format!("failed to create tokio runtime: {e}");
-                        error!(path = %watch_path_thread.display(), "{msg}");
-                        let _ = init_tx.send(Err(msg));
-                        return;
-                    }
-                };
-
-                if let Err(e) = rt.block_on(watcher.run_with_init_signal(
-                    &watch_path_thread,
-                    mode,
-                    debounce,
-                    shutdown_rx,
-                    init_tx,
-                )) {
-                    error!(path = %watch_path_thread.display(), "watcher exited with error: {e}");
-                }
-            },
+        let (handle, init_rx) = match spawn_watcher_thread(
+            resolved_config,
+            data_path.clone(),
+            wc.path.clone(),
+            wc.mode,
+            wc.debounce_seconds,
+            on_event_callback,
         ) {
-            Ok(h) => h,
+            Ok(pair) => pair,
             Err(e) => {
-                warn!(path = %path_str, "failed to spawn auto-start watcher thread: {e}");
+                warn!(path = %path_str, "failed to spawn auto-start watcher: {e}");
                 continue;
             }
         };
 
-        // Wait for init signal (up to 5 seconds)
         match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 info!(path = %path_str, "auto-started watcher successfully");
-                state.active_watchers.insert(
-                    path_str,
-                    state::WatcherHandle {
-                        shutdown_tx,
-                        thread_handle,
-                    },
-                );
+                state.active_watchers.insert(path_str, handle);
             }
             Ok(Err(msg)) => {
                 warn!(path = %path_str, "auto-start watcher failed: {msg}");

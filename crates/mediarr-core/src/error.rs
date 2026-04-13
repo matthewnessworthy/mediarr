@@ -137,6 +137,11 @@ pub enum MediError {
     #[error("subtitle discovery error: {0}")]
     SubtitleDiscovery(String),
 
+    // -- Rename batch errors --
+    /// One or more renames in a batch failed.
+    #[error("rename batch failed: {0}")]
+    RenameBatchFailed(String),
+
     // -- Watcher errors --
     /// Filesystem watcher error.
     #[error("watcher error: {0}")]

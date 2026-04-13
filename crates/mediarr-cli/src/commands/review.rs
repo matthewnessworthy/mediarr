@@ -6,9 +6,7 @@
 
 use std::io::{self, BufRead, Write};
 
-use mediarr_core::{
-    Config, HistoryDb, RenamePlan, RenamePlanEntry, Renamer, ReviewStatus,
-};
+use mediarr_core::{Config, HistoryDb, ReviewStatus};
 
 use crate::ReviewArgs;
 
@@ -48,7 +46,6 @@ fn approve_all(
     config: &Config,
     db: &HistoryDb,
 ) -> anyhow::Result<()> {
-    let renamer = Renamer::from_config(&config.general);
     let mut approved = 0;
     let mut rejected_stale = 0;
 
@@ -70,7 +67,7 @@ fn approve_all(
         }
 
         // Execute rename
-        if let Err(e) = execute_review_rename(entry, &renamer, db) {
+        if let Err(e) = db.execute_review_rename(entry, &config.general) {
             eprintln!(
                 "Failed: {} - {e}",
                 entry
@@ -166,7 +163,6 @@ fn interactive_review(
         return Ok(());
     }
 
-    let renamer = Renamer::from_config(&config.general);
     let mut approved = 0;
 
     for idx in &selected {
@@ -187,7 +183,7 @@ fn interactive_review(
             continue;
         }
 
-        if let Err(e) = execute_review_rename(entry, &renamer, db) {
+        if let Err(e) = db.execute_review_rename(entry, &config.general) {
             eprintln!(
                 "Failed: {} - {e}",
                 entry
@@ -213,45 +209,5 @@ fn interactive_review(
     }
 
     eprintln!("Approved {approved} files");
-    Ok(())
-}
-
-/// Execute a single rename from a review queue entry and record to history.
-fn execute_review_rename(
-    entry: &mediarr_core::ReviewQueueEntry,
-    renamer: &Renamer,
-    db: &HistoryDb,
-) -> anyhow::Result<()> {
-    let plan = RenamePlan {
-        entries: vec![RenamePlanEntry {
-            source_path: entry.source_path.clone(),
-            dest_path: entry.proposed_path.clone(),
-        }],
-    };
-
-    let results = renamer.execute(&plan);
-    let all_success = results.iter().all(|r| r.success);
-
-    if !all_success {
-        let errors: Vec<String> = results
-            .iter()
-            .filter(|r| !r.success)
-            .filter_map(|r| r.error.clone())
-            .collect();
-        anyhow::bail!("rename failed: {}", errors.join("; "));
-    }
-
-    // Record to history
-    let media_info: mediarr_core::MediaInfo =
-        serde_json::from_str(&entry.media_info_json).unwrap_or_default();
-
-    let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> =
-        std::iter::once((
-            entry.source_path.to_string_lossy().to_string(),
-            media_info,
-        ))
-        .collect();
-
-    db.record_rename_results(&results, &media_info_map)?;
     Ok(())
 }
