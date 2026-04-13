@@ -2,6 +2,8 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Switch } from '$lib/components/ui/switch';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import { Button } from '$lib/components/ui/button';
 	import { Trash2, Settings2 } from '@lucide/svelte';
 	import type { WatcherConfig } from '$lib/types';
 	import { truncatePath } from '$lib/utils.js';
@@ -82,16 +84,34 @@
 			size="sm"
 		/>
 
-		<button
-			type="button"
-			class="shrink-0 p-1 text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-30"
-			style="transition-duration: var(--duration-fast);"
-			aria-label="Remove watched folder"
-			disabled={active}
-			onclick={() => onRemove?.(watcher.path)}
-		>
-			<Trash2 class="size-3.5" />
-		</button>
+		<AlertDialog.Root>
+			<AlertDialog.Trigger>
+				{#snippet child({ props })}
+					<button
+						type="button"
+						class="shrink-0 p-1 text-muted-foreground/30 hover:text-destructive transition-colors disabled:opacity-30"
+						style="transition-duration: var(--duration-fast);"
+						aria-label="Remove watched folder"
+						disabled={active}
+						{...props}
+					>
+						<Trash2 class="size-3.5" />
+					</button>
+				{/snippet}
+			</AlertDialog.Trigger>
+			<AlertDialog.Content>
+				<AlertDialog.Header>
+					<AlertDialog.Title>Remove watched folder?</AlertDialog.Title>
+					<AlertDialog.Description>
+						This will stop watching '{watcher.path}' for new media files. Existing rename history is not affected.
+					</AlertDialog.Description>
+				</AlertDialog.Header>
+				<AlertDialog.Footer>
+					<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+					<AlertDialog.Action variant="destructive" onclick={() => onRemove?.(watcher.path)}>Remove</AlertDialog.Action>
+				</AlertDialog.Footer>
+			</AlertDialog.Content>
+		</AlertDialog.Root>
 	</div>
 
 	<div class="mt-2 flex items-center gap-4 pl-5 text-xs text-muted-foreground">

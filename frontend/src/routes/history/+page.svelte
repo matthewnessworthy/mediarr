@@ -4,6 +4,7 @@
 	import { Clock, Trash2 } from '@lucide/svelte';
 	import { historyState } from '$lib/state/history.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import BatchCard from '$lib/components/history/BatchCard.svelte';
 	import type { BatchSummary, UndoEligibility } from '$lib/types';
 
@@ -62,16 +63,34 @@
 			{/if}
 		</div>
 		{#if historyState.batches.length > 0}
-			<Button
-				variant="ghost"
-				size="sm"
-				disabled={clearing}
-				onclick={clearHistory}
-				class="text-muted-foreground hover:text-destructive"
-			>
-				<Trash2 class="size-3.5" />
-				{clearing ? 'Clearing...' : 'Clear history'}
-			</Button>
+			<AlertDialog.Root>
+				<AlertDialog.Trigger>
+					{#snippet child({ props })}
+						<Button
+							variant="ghost"
+							size="sm"
+							disabled={clearing}
+							class="text-muted-foreground hover:text-destructive"
+							{...props}
+						>
+							<Trash2 class="size-3.5" />
+							{clearing ? 'Clearing...' : 'Clear history'}
+						</Button>
+					{/snippet}
+				</AlertDialog.Trigger>
+				<AlertDialog.Content>
+					<AlertDialog.Header>
+						<AlertDialog.Title>Clear all history?</AlertDialog.Title>
+						<AlertDialog.Description>
+							This will permanently delete all rename history records. This action cannot be undone.
+						</AlertDialog.Description>
+					</AlertDialog.Header>
+					<AlertDialog.Footer>
+						<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+						<AlertDialog.Action variant="destructive" onclick={clearHistory}>Continue</AlertDialog.Action>
+					</AlertDialog.Footer>
+				</AlertDialog.Content>
+			</AlertDialog.Root>
 		{/if}
 	</div>
 
