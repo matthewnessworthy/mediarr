@@ -9,6 +9,7 @@
 	const { entries, onChanged }: { entries: ReviewQueueEntry[]; onChanged: () => void } = $props();
 
 	let processing = $state<Record<number, boolean>>({});
+	let error = $state<string | null>(null);
 	const filename = basename;
 
 	function isProcessing(id: number | null): boolean {
@@ -18,11 +19,12 @@
 	async function approve(entry: ReviewQueueEntry) {
 		if (entry.id === null) return;
 		processing[entry.id] = true;
+		error = null;
 		try {
 			await invoke('approve_review_entry', { id: entry.id });
 			onChanged();
 		} catch (e) {
-			console.error('Failed to approve review entry:', e);
+			error = (e as Error).message ?? 'Failed to approve review entry';
 		} finally {
 			if (entry.id !== null) processing[entry.id] = false;
 		}
@@ -31,16 +33,21 @@
 	async function reject(entry: ReviewQueueEntry) {
 		if (entry.id === null) return;
 		processing[entry.id] = true;
+		error = null;
 		try {
 			await invoke('update_review_status', { id: entry.id, status: 'rejected' });
 			onChanged();
 		} catch (e) {
-			console.error('Failed to reject review entry:', e);
+			error = (e as Error).message ?? 'Failed to reject review entry';
 		} finally {
 			if (entry.id !== null) processing[entry.id] = false;
 		}
 	}
 </script>
+
+{#if error}
+	<div class="mb-2 rounded-md bg-destructive/15 p-2 text-xs text-destructive">{error}</div>
+{/if}
 
 {#if entries.length > 0}
 	<div class="rounded-md border border-border/60">

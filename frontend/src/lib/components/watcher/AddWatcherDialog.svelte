@@ -28,7 +28,7 @@
 
 	$effect(() => {
 		if (open && !globalConfig) {
-			invoke<Config>('get_config').then(c => { globalConfig = c; });
+			invoke<Config>('get_config').then(c => { globalConfig = c; }).catch(e => { error = (e as Error).message ?? 'Failed to load config'; });
 		}
 	});
 

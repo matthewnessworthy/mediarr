@@ -25,6 +25,7 @@
 	let entries = $state<RenameRecord[]>([]);
 	let loadingEntries = $state(false);
 	let entriesLoaded = $state(false);
+	let error = $state<string | null>(null);
 
 	$effect(() => {
 		if (expanded && !entriesLoaded && !loadingEntries) {
@@ -34,11 +35,12 @@
 
 	async function fetchEntries() {
 		loadingEntries = true;
+		error = null;
 		try {
 			entries = await invoke<RenameRecord[]>('get_batch', { batchId: batch.batch_id });
 			entriesLoaded = true;
 		} catch (e) {
-			console.error(`Failed to load batch ${batch.batch_id}:`, e);
+			error = (e as Error).message ?? 'Failed to load batch entries';
 		} finally {
 			loadingEntries = false;
 		}
@@ -63,11 +65,12 @@
 
 	async function handleUndo() {
 		undoing = true;
+		error = null;
 		try {
 			await invoke<RenameResult[]>('execute_undo', { batchId: batch.batch_id });
 			onUndoComplete?.();
 		} catch (e) {
-			console.error('Undo failed:', e);
+			error = (e as Error).message ?? 'Undo failed';
 		} finally {
 			undoing = false;
 		}
@@ -139,6 +142,12 @@
 			style="transition-duration: var(--duration-normal);"
 		/>
 	</button>
+
+	{#if error}
+		<div class="px-4 py-2">
+			<div class="rounded-md bg-destructive/15 p-2 text-xs text-destructive">{error}</div>
+		</div>
+	{/if}
 
 	<div class={cn('expandable', expanded && 'expanded')}>
 		<div>

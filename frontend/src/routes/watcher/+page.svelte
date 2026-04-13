@@ -48,6 +48,7 @@
 
 	async function loadWatchers() {
 		watcherState.loading = true;
+		watcherState.error = null;
 		try {
 			watcherState.watchers = await invoke<WatcherConfig[]>('list_watchers');
 			watcherState.events = await invoke<WatcherEvent[]>('list_watcher_events', {
@@ -58,26 +59,31 @@
 				watch_path: null,
 			});
 		} catch (e) {
-			console.error('Failed to load watcher data:', e);
+			watcherState.error = (e as Error).message ?? 'Failed to load watcher data';
 		} finally {
 			watcherState.loading = false;
 		}
 	}
 
 	async function refreshReviewQueue() {
-		watcherState.reviewQueue = await invoke<ReviewQueueEntry[]>('list_review_queue', {
-			watch_path: null,
-		});
+		try {
+			watcherState.reviewQueue = await invoke<ReviewQueueEntry[]>('list_review_queue', {
+				watch_path: null,
+			});
+		} catch (e) {
+			watcherState.error = (e as Error).message ?? 'Failed to refresh review queue';
+		}
 	}
 
 	async function removeWatcher(path: string) {
+		watcherState.error = null;
 		try {
 			const config = await invoke<import('$lib/types').Config>('get_config');
 			config.watchers = config.watchers.filter((w: import('$lib/types').WatcherConfig) => w.path !== path);
 			await invoke('update_config', { config });
 			await loadWatchers();
 		} catch (e) {
-			console.error('Failed to remove watcher:', e);
+			watcherState.error = (e as Error).message ?? 'Failed to remove watcher';
 		}
 	}
 
@@ -88,8 +94,12 @@
 		editMode = watcher.mode;
 		editDebounce = watcher.debounce_seconds;
 		editSettings = watcher.settings ? { ...watcher.settings } : {};
-		editGlobalConfig = await invoke<Config>('get_config');
 		editError = '';
+		try {
+			editGlobalConfig = await invoke<Config>('get_config');
+		} catch (e) {
+			editError = (e as Error).message ?? 'Failed to load config';
+		}
 		editDialogOpen = true;
 	}
 
@@ -189,6 +199,10 @@
 			Add Folder
 		</Button>
 	</div>
+
+	{#if watcherState.error}
+		<div class="mb-4 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{watcherState.error}</div>
+	{/if}
 
 	{#if watcherState.loading}
 		<div class="space-y-1">

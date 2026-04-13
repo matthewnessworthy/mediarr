@@ -21,9 +21,12 @@
 
 	onMount(async () => {
 		configState.loading = true;
+		configState.error = null;
 		try {
 			configState.config = await invoke<Config>('get_config');
 			savedSnapshot = JSON.stringify(configState.config);
+		} catch (e) {
+			configState.error = (e as Error).message ?? 'Failed to load config';
 		} finally {
 			configState.loading = false;
 		}
@@ -39,10 +42,13 @@
 	async function saveConfig() {
 		if (!configState.config) return;
 		configState.saving = true;
+		configState.error = null;
 		try {
 			await invoke('update_config', { config: configState.config });
 			savedSnapshot = JSON.stringify(configState.config);
 			hasUnsavedChanges = false;
+		} catch (e) {
+			configState.error = (e as Error).message ?? 'Failed to save config';
 		} finally {
 			configState.saving = false;
 		}
@@ -67,6 +73,10 @@
 			</Button>
 		{/if}
 	</div>
+
+	{#if configState.error}
+		<div class="mb-4 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{configState.error}</div>
+	{/if}
 
 	{#if configState.loading}
 		<div class="space-y-4 pt-6">

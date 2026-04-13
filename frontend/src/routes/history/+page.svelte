@@ -11,6 +11,7 @@
 
 	async function loadBatches() {
 		historyState.loading = true;
+		historyState.error = null;
 		try {
 			historyState.batches = await invoke<BatchSummary[]>('list_batches', { limit: 50 });
 			// Check undo eligibility for most recent batches (first 5)
@@ -23,6 +24,8 @@
 					console.warn(`Failed to check undo for batch ${batch.batch_id}:`, e);
 				}
 			}
+		} catch (e) {
+			historyState.error = (e as Error).message ?? 'Failed to load history';
 		} finally {
 			historyState.loading = false;
 		}
@@ -30,13 +33,14 @@
 
 	async function clearHistory() {
 		clearing = true;
+		historyState.error = null;
 		try {
 			await invoke('clear_history');
 			historyState.batches = [];
 			historyState.undoEligibility = new Map();
 			historyState.expandedBatchIds = new Set();
 		} catch (e) {
-			console.error('Failed to clear history:', e);
+			historyState.error = (e as Error).message ?? 'Failed to clear history';
 		} finally {
 			clearing = false;
 		}
@@ -70,6 +74,10 @@
 			</Button>
 		{/if}
 	</div>
+
+	{#if historyState.error}
+		<div class="mb-4 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{historyState.error}</div>
+	{/if}
 
 	{#if historyState.loading}
 		<div class="space-y-1">

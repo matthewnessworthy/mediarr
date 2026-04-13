@@ -32,6 +32,7 @@
 		isLastInGroup?: boolean;
 	} = $props();
 
+	let resolveError = $state<string | null>(null);
 	const isAmbiguous = $derived(result.status === 'Ambiguous');
 	const isCollision = $derived(result.status === 'Conflict');
 
@@ -75,30 +76,35 @@
 	}
 
 	async function handleResolve(chosen: MediaInfo) {
-		// Get the template for this media type from config
-		const config = await invoke<Config>('get_config');
-		const template =
-			chosen.media_type === 'Movie'
-				? config.templates.movie
-				: config.templates.series;
-		const newPath = await invoke<string>('preview_proposed_path', {
-			template,
-			mediaInfo: chosen,
-			sourcePath: result.source_path,
-		});
+		resolveError = null;
+		try {
+			// Get the template for this media type from config
+			const config = await invoke<Config>('get_config');
+			const template =
+				chosen.media_type === 'Movie'
+					? config.templates.movie
+					: config.templates.series;
+			const newPath = await invoke<string>('preview_proposed_path', {
+				template,
+				mediaInfo: chosen,
+				sourcePath: result.source_path,
+			});
 
-		// Update the result in scanState
-		const idx = scanState.results.findIndex((r) => r.source_path === result.source_path);
-		if (idx !== -1) {
-			scanState.results[idx] = {
-				...scanState.results[idx],
-				media_info: chosen,
-				proposed_path: newPath,
-				status: 'Ok',
-				ambiguity_reason: null,
-				alternatives: [],
-			};
-			scanState.results = [...scanState.results]; // trigger reactivity
+			// Update the result in scanState
+			const idx = scanState.results.findIndex((r) => r.source_path === result.source_path);
+			if (idx !== -1) {
+				scanState.results[idx] = {
+					...scanState.results[idx],
+					media_info: chosen,
+					proposed_path: newPath,
+					status: 'Ok',
+					ambiguity_reason: null,
+					alternatives: [],
+				};
+				scanState.results = [...scanState.results]; // trigger reactivity
+			}
+		} catch (e) {
+			resolveError = (e as Error).message ?? 'Failed to resolve ambiguity';
 		}
 	}
 </script>
@@ -218,6 +224,12 @@
 			{#if result.subtitles.length > 0}
 				<div class="px-4 pb-3">
 					<SubtitleTree subtitles={result.subtitles} />
+				</div>
+			{/if}
+
+			{#if resolveError}
+				<div class="px-4 pb-2">
+					<div class="rounded-md bg-destructive/15 p-2 text-xs text-destructive">{resolveError}</div>
 				</div>
 			{/if}
 

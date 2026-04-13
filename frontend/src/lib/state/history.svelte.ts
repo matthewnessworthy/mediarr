@@ -3,6 +3,7 @@ import type { BatchSummary, UndoEligibility } from '$lib/types';
 class HistoryState {
 	batches = $state<BatchSummary[]>([]);
 	loading = $state(false);
+	error = $state<string | null>(null);
 	expandedBatchIds = $state<Set<string>>(new Set());
 	undoEligibility = $state<Map<string, UndoEligibility>>(new Map());
 
