@@ -73,7 +73,7 @@ jobs:
         include:
           - os: macos-latest
             artifact: mediarr
-            asset_name: mediarr-cli-macos-amd64
+            asset_name: mediarr-cli-macos-arm64
           - os: ubuntu-latest
             artifact: mediarr
             asset_name: mediarr-cli-linux-amd64
