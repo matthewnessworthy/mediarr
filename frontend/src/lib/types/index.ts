@@ -12,8 +12,6 @@ export type SubtitleType = 'Forced' | 'Sdh' | 'Hi' | 'Commentary';
 export type DiscoveryMethod = 'Sidecar' | 'SubsSubfolder' | 'NestedLanguage' | 'VobSub';
 export type RenameOperation = 'Move' | 'Copy';
 export type ConflictStrategy = 'Skip' | 'Overwrite' | 'NumericSuffix';
-export type NonPreferredAction = 'Ignore' | 'Backup' | 'KeepAll' | 'Review';
-
 // Lowercase-serialized enums (Rust has #[serde(rename_all = "lowercase")])
 export type WatcherMode = 'auto' | 'review';
 export type WatcherAction = 'renamed' | 'queued' | 'error';
@@ -129,7 +127,6 @@ export interface WatcherSettings {
 
 	subtitles_enabled?: boolean | null;
 	preferred_languages?: string[] | null;
-	non_preferred_action?: NonPreferredAction | null;
 }
 
 export interface WatcherConfig {
@@ -186,11 +183,8 @@ export interface TemplateConfig {
 
 export interface SubtitleConfig {
 	enabled: boolean;
-	naming_pattern: string;
 	discovery: DiscoveryToggles;
 	preferred_languages: string[];
-	non_preferred_action: NonPreferredAction;
-	backup_path: string | null;
 }
 
 export interface Config {
@@ -207,5 +201,4 @@ export interface Config {
 export type ScanEvent =
 	| { event: 'progress'; data: { scanned: number; total_estimate: number } }
 	| { event: 'result'; data: { scan_result: ScanResult } }
-	| { event: 'complete'; data: { total: number } }
-	| { event: 'error'; data: { message: string } };
+	| { event: 'complete'; data: { total: number } };

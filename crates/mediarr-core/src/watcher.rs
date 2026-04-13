@@ -40,8 +40,6 @@ type EventCallback = Box<dyn Fn(&WatcherEvent) + Send>;
 /// a channel bridge pattern. Processes debounced filesystem events by
 /// either auto-renaming or queuing for review.
 pub struct WatcherManager {
-    #[allow(dead_code)]
-    config: Config,
     scanner: Scanner,
     renamer: Renamer,
     history: HistoryDb,
@@ -60,7 +58,6 @@ impl WatcherManager {
         let scanner = Scanner::new(config.clone());
         let renamer = Renamer::from_config(&config.general);
         Self {
-            config,
             scanner,
             renamer,
             history,

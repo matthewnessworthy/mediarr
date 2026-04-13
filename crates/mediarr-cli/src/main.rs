@@ -47,9 +47,6 @@ enum Commands {
 pub struct ScanArgs {
     /// Path to scan for media files
     pub path: PathBuf,
-    /// Scan subdirectories recursively
-    #[arg(short, long, default_value_t = true)]
-    pub recursive: bool,
     /// Filter by media type
     #[arg(short = 't', long = "type", value_parser = ["series", "movie"])]
     pub media_type: Option<String>,
@@ -69,9 +66,6 @@ pub struct ScanArgs {
 pub struct RenameArgs {
     /// Path to scan and rename media files
     pub path: PathBuf,
-    /// Scan subdirectories recursively
-    #[arg(short, long, default_value_t = true)]
-    pub recursive: bool,
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub yes: bool,

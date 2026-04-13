@@ -55,7 +55,6 @@ export function mockConfig(overrides: Partial<Config> = {}): Config {
 		},
 		subtitles: {
 			enabled: true,
-			naming_pattern: '{title}.{language}.{type}.{ext}',
 			discovery: {
 				sidecar: true,
 				subs_subfolder: true,
@@ -63,8 +62,6 @@ export function mockConfig(overrides: Partial<Config> = {}): Config {
 				vobsub_pairs: true,
 			},
 			preferred_languages: ['eng'],
-			non_preferred_action: 'Ignore',
-			backup_path: null,
 		},
 		watchers: [],
 		...overrides,

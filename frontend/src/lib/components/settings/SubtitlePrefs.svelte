@@ -1,10 +1,9 @@
 <script lang="ts">
-	import type { SubtitleConfig, NonPreferredAction } from '$lib/types';
+	import type { SubtitleConfig } from '$lib/types';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
 	import { X } from '@lucide/svelte';
 	import DiscoveryToggles from './DiscoveryToggles.svelte';
 
@@ -16,13 +15,6 @@
 	let { config, onUpdate }: Props = $props();
 
 	let languageInput = $state('');
-
-	const nonPreferredOptions: { value: NonPreferredAction; label: string; desc: string }[] = [
-		{ value: 'Ignore', label: 'Ignore', desc: 'Leave non-preferred subtitles in place' },
-		{ value: 'Backup', label: 'Backup', desc: 'Move to a backup directory' },
-		{ value: 'KeepAll', label: 'Keep All', desc: 'Rename all subtitles regardless' },
-		{ value: 'Review', label: 'Review', desc: 'Flag for manual review' },
-	];
 
 	function update(partial: Partial<SubtitleConfig>) {
 		onUpdate({ ...config, ...partial });
@@ -64,17 +56,6 @@
 	</div>
 
 	{#if config.enabled}
-		<!-- Naming pattern -->
-		<div class="space-y-2">
-			<Label class="text-sm font-medium">Subtitle naming pattern</Label>
-			<Input
-				value={config.naming_pattern}
-				oninput={(e: Event) => update({ naming_pattern: (e.target as HTMLInputElement).value })}
-				placeholder="{'{'}title{'}'}.{'{'}language{'}'}.{'{'}type{'}'}.{'{'}ext{'}'}"
-				class="font-mono text-sm"
-			/>
-		</div>
-
 		<!-- Preferred languages -->
 		<div class="space-y-2">
 			<Label class="text-sm font-medium">Preferred languages</Label>
@@ -99,41 +80,6 @@
 					class="h-6 w-16 min-w-0 border-none bg-transparent px-1 text-sm shadow-none focus-visible:ring-0"
 				/>
 			</div>
-		</div>
-
-		<!-- Non-preferred action -->
-		<div class="space-y-2">
-			<Label class="text-sm font-medium">Non-preferred subtitle action</Label>
-			<div class="space-y-2">
-				{#each nonPreferredOptions as option}
-					<label class="flex items-start gap-3 cursor-pointer group">
-						<input
-							type="radio"
-							name="non_preferred_action"
-							value={option.value}
-							checked={config.non_preferred_action === option.value}
-							onchange={() => update({ non_preferred_action: option.value })}
-							class="mt-0.5 accent-primary"
-						/>
-						<div class="space-y-0.5">
-							<span class="text-sm text-foreground group-hover:text-foreground/90">{option.label}</span>
-							<p class="text-xs text-muted-foreground">{option.desc}</p>
-						</div>
-					</label>
-				{/each}
-			</div>
-
-			{#if config.non_preferred_action === 'Backup'}
-				<div class="ml-6 space-y-1">
-					<Label class="text-xs text-muted-foreground">Backup path</Label>
-					<Input
-						value={config.backup_path ?? ''}
-						oninput={(e: Event) => update({ backup_path: (e.target as HTMLInputElement).value || null })}
-						placeholder="/path/to/subtitle/backups"
-						class="text-sm"
-					/>
-				</div>
-			{/if}
 		</div>
 
 		<!-- Discovery toggles -->

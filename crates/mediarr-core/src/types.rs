@@ -441,9 +441,6 @@ pub struct WatcherSettings {
     /// Override preferred languages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_languages: Option<Vec<String>>,
-    /// Override non-preferred action.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub non_preferred_action: Option<NonPreferredAction>,
 }
 
 impl WatcherSettings {
@@ -457,7 +454,6 @@ impl WatcherSettings {
             && self.series_template.is_none()
             && self.subtitles_enabled.is_none()
             && self.preferred_languages.is_none()
-            && self.non_preferred_action.is_none()
     }
 }
 
@@ -790,7 +786,6 @@ mod tests {
         assert!(s.series_template.is_none());
         assert!(s.subtitles_enabled.is_none());
         assert!(s.preferred_languages.is_none());
-        assert!(s.non_preferred_action.is_none());
     }
 
     #[test]

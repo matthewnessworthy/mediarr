@@ -13,8 +13,6 @@ use owo_colors::OwoColorize;
 pub struct OutputFormatter {
     /// Whether ANSI color codes are enabled.
     color_enabled: bool,
-    /// Whether to output JSON instead of tables.
-    _json_mode: bool,
 }
 
 impl OutputFormatter {
@@ -25,10 +23,7 @@ impl OutputFormatter {
     pub fn new(json_mode: bool) -> Self {
         let color_enabled =
             !json_mode && io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err();
-        Self {
-            color_enabled,
-            _json_mode: json_mode,
-        }
+        Self { color_enabled }
     }
 
     /// Display scan results as a table with STATUS, TYPE, TITLE, PROPOSED PATH columns.

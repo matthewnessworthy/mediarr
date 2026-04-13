@@ -51,7 +51,6 @@ pub fn scan_files(
 /// Events emitted during a streaming scan.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
-#[allow(dead_code)]
 pub enum ScanEvent {
     /// Progress update with count of scanned files.
     Progress {
@@ -62,8 +61,6 @@ pub enum ScanEvent {
     Result { scan_result: Box<ScanResult> },
     /// Scan is complete.
     Complete { total: usize },
-    /// An error occurred during scanning.
-    Error { message: String },
 }
 
 /// Scan a folder for media files, streaming results back via a channel.

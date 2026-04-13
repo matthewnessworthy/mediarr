@@ -80,12 +80,6 @@
 						scanned: scanState.scanProgress.scanned + message.data.scanned,
 						total: scanState.scanProgress.total + message.data.total_estimate,
 					};
-				} else if (message.event === 'error') {
-					// Log per-folder error but continue to next folder
-					const folderName = path.split('/').pop() || path;
-					scanError = scanError
-						? `${scanError}\nCould not scan ${folderName}: ${message.data.message}`
-						: `Could not scan ${folderName}: ${message.data.message}`;
 				}
 				// 'complete' per folder -- just continue to next folder
 			};

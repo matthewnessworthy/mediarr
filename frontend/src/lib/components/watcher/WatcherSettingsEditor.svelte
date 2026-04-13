@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Switch } from '$lib/components/ui/switch';
-	import type { Config, WatcherSettings, RenameOperation, ConflictStrategy, NonPreferredAction } from '$lib/types';
+	import type { Config, WatcherSettings, RenameOperation, ConflictStrategy } from '$lib/types';
 
 	let {
 		settings = $bindable<WatcherSettings>({}),
@@ -287,40 +287,4 @@
 		{/if}
 	</div>
 
-	<!-- Non-Preferred Action -->
-	<div class="space-y-1.5 mt-3">
-		<div class="flex items-center justify-between">
-			<span class="text-xs font-medium text-muted-foreground">Non-Preferred Action</span>
-			<div class="flex items-center gap-2">
-				<span class="text-[10px] text-muted-foreground/60">Override</span>
-				<Switch
-					checked={settings.non_preferred_action != null}
-					onCheckedChange={(checked: boolean) => {
-						if (checked) {
-							settings.non_preferred_action = globalConfig.subtitles.non_preferred_action;
-						} else {
-							settings.non_preferred_action = undefined;
-						}
-					}}
-					size="sm"
-				/>
-			</div>
-		</div>
-		<div class="flex items-center gap-4 flex-wrap {settings.non_preferred_action == null ? 'opacity-50 pointer-events-none' : ''}">
-			{#each [['Ignore', 'Ignore'], ['Backup', 'Backup'], ['KeepAll', 'Keep All'], ['Review', 'Review']] as [value, label]}
-				<label class="flex items-center gap-2 text-sm cursor-pointer">
-					<input
-						type="radio"
-						name="watcher-settings-non-preferred"
-						value={value}
-						checked={(settings.non_preferred_action != null ? settings.non_preferred_action : globalConfig.subtitles.non_preferred_action) === value}
-						disabled={settings.non_preferred_action == null}
-						onchange={() => { settings.non_preferred_action = value as NonPreferredAction; }}
-						class="accent-primary"
-					/>
-					{label}
-				</label>
-			{/each}
-		</div>
-	</div>
 </div>

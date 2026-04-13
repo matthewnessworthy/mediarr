@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use crate::error::{MediError, Result};
-use crate::types::{
-    ConflictStrategy, DiscoveryToggles, NonPreferredAction, RenameOperation, WatcherConfig,
-};
+use crate::types::{ConflictStrategy, DiscoveryToggles, RenameOperation, WatcherConfig};
 
 /// Top-level application configuration.
 ///
@@ -57,16 +55,10 @@ pub struct TemplateConfig {
 pub struct SubtitleConfig {
     /// Whether subtitle discovery is enabled at all.
     pub enabled: bool,
-    /// Template for subtitle output names.
-    pub naming_pattern: String,
     /// Which discovery methods are active.
     pub discovery: DiscoveryToggles,
     /// Ordered list of preferred ISO 639-1 language codes (D-05, D-06).
     pub preferred_languages: Vec<String>,
-    /// What to do with non-preferred subtitles (SUBT-07).
-    pub non_preferred_action: NonPreferredAction,
-    /// Backup path for non-preferred subtitles when action = Backup.
-    pub backup_path: Option<PathBuf>,
 }
 
 // ---------------------------------------------------------------------------
@@ -98,11 +90,8 @@ impl Default for SubtitleConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            naming_pattern: "{video_name}.{lang}.{type}.{ext}".to_string(),
             discovery: DiscoveryToggles::default(),
             preferred_languages: Vec::new(),
-            non_preferred_action: NonPreferredAction::Ignore,
-            backup_path: None,
         }
     }
 }
@@ -217,14 +206,7 @@ impl WatcherConfig {
                     .preferred_languages
                     .clone()
                     .unwrap_or_else(|| global.subtitles.preferred_languages.clone()),
-                non_preferred_action: s
-                    .non_preferred_action
-                    .clone()
-                    .unwrap_or_else(|| global.subtitles.non_preferred_action.clone()),
-                // Not overridable per-watcher -- always use global
-                naming_pattern: global.subtitles.naming_pattern.clone(),
                 discovery: global.subtitles.discovery.clone(),
-                backup_path: global.subtitles.backup_path.clone(),
             },
             watchers: global.watchers.clone(),
         }
@@ -306,14 +288,6 @@ mod tests {
         assert!(config.subtitles.preferred_languages.is_empty());
     }
 
-    #[test]
-    fn default_non_preferred_action_is_ignore() {
-        let config = Config::default();
-        assert_eq!(
-            config.subtitles.non_preferred_action,
-            NonPreferredAction::Ignore
-        );
-    }
 
     // -- TOML round-trip --
 
@@ -340,7 +314,6 @@ mod tests {
             },
             subtitles: SubtitleConfig {
                 enabled: false,
-                naming_pattern: "{video_name}.{lang}.{ext}".to_string(),
                 discovery: DiscoveryToggles {
                     sidecar: true,
                     subs_subfolder: false,
@@ -348,8 +321,6 @@ mod tests {
                     vobsub_pairs: true,
                 },
                 preferred_languages: vec!["en".to_string(), "ja".to_string()],
-                non_preferred_action: NonPreferredAction::Backup,
-                backup_path: Some(PathBuf::from("/media/backup/subs")),
             },
             watchers: Vec::new(),
         };
@@ -826,6 +797,44 @@ create_directories = false
     }
 
     // -- I/O error propagation --
+
+    #[test]
+    fn old_config_with_removed_fields_still_loads() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("old_config.toml");
+        // Simulate an old config file that contains fields removed in this version
+        std::fs::write(
+            &path,
+            r#"
+[general]
+operation = "Move"
+conflict_strategy = "Skip"
+create_directories = true
+
+[templates]
+movie = "{Title} ({year})/{Title} ({year}).{ext}"
+series = "{Title} ({year})/{Title} ({year}) - S{season:02}E{episode:02}.{ext}"
+
+[subtitles]
+enabled = true
+naming_pattern = "{video_name}.{lang}.{type}.{ext}"
+preferred_languages = ["en"]
+non_preferred_action = "Ignore"
+backup_path = "/old/backup/path"
+
+[subtitles.discovery]
+sidecar = true
+subs_subfolder = true
+nested_language_folders = true
+vobsub_pairs = true
+"#,
+        )
+        .expect("write old config");
+
+        let config = Config::load(&path).expect("old config with removed fields should load");
+        assert!(config.subtitles.enabled);
+        assert_eq!(config.subtitles.preferred_languages, vec!["en"]);
+    }
 
     #[test]
     fn load_directory_path_returns_io_error() {
