@@ -19,7 +19,7 @@ use crate::history::HistoryDb;
 use crate::renamer::{RenamePlan, RenamePlanEntry, Renamer};
 use crate::scanner::Scanner;
 use crate::types::{
-    RenameRecord, ReviewQueueEntry, ReviewStatus, WatcherAction, WatcherEvent, WatcherMode,
+    MediaInfo, ReviewQueueEntry, ReviewStatus, WatcherAction, WatcherEvent, WatcherMode,
 };
 
 /// Default maximum activity events kept per watch path (per D-07).
@@ -407,37 +407,25 @@ impl WatcherManager {
                     }
 
                     // Record batch in history
-                    let batch_id = HistoryDb::generate_batch_id();
-
-                    let records: Vec<RenameRecord> = results
+                    let media_info_map: std::collections::HashMap<String, MediaInfo> = results
                         .iter()
                         .filter(|r| r.success)
-                        .filter_map(|r| {
-                            let meta = std::fs::metadata(&r.dest_path).ok()?;
-                            let file_mtime = meta
-                                .modified()
-                                .ok()
-                                .map(|t| {
-                                    let dt: chrono::DateTime<chrono::Utc> = t.into();
-                                    dt.to_rfc3339()
-                                })
-                                .unwrap_or_default();
-
-                            Some(RenameRecord {
-                                batch_id: batch_id.clone(),
-                                timestamp: timestamp.clone(),
-                                source_path: r.source_path.clone(),
-                                dest_path: r.dest_path.clone(),
-                                media_info: scan_result.media_info.clone(),
-                                file_size: meta.len(),
-                                file_mtime,
-                            })
+                        .map(|r| {
+                            (
+                                r.source_path.to_string_lossy().to_string(),
+                                scan_result.media_info.clone(),
+                            )
                         })
                         .collect();
 
-                    if let Err(e) = self.history.record_batch(&records) {
-                        warn!(error = %e, "failed to record rename batch in history");
-                    }
+                    let batch_id =
+                        match self.history.record_rename_results(&results, &media_info_map) {
+                            Ok(id) => Some(id).filter(|s| !s.is_empty()),
+                            Err(e) => {
+                                warn!(error = %e, "failed to record rename batch in history");
+                                None
+                            }
+                        };
 
                     // Log watcher event
                     let event = WatcherEvent {
@@ -447,7 +435,7 @@ impl WatcherManager {
                         filename,
                         action: WatcherAction::Renamed,
                         detail: Some(format!("{}", scan_result.proposed_path.display())),
-                        batch_id: Some(batch_id),
+                        batch_id,
                     };
                     self.history.log_watcher_event(&event)?;
                     self.notify_event(&event);
@@ -825,6 +813,7 @@ mod tests {
         }));
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
 
         let watch_path = source.path().to_path_buf();
         let watch_path_clone = watch_path.clone();
@@ -838,12 +827,21 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path_clone,
+                    WatcherMode::Auto,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
             })
             .expect("spawn watcher thread");
 
-        // Wait for watcher to start up
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for watcher to confirm it's ready
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("watcher init signal should arrive");
+        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
 
         // Create a video file in the watched directory
         let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
@@ -851,7 +849,7 @@ mod tests {
 
         // Wait for debounce (1 second timeout) + processing time
         // The debouncer ticks at timeout/4 = 250ms, events emitted after timeout (1s)
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         // Shutdown the watcher
         let _ = shutdown_tx.send(true);
@@ -901,6 +899,7 @@ mod tests {
         }));
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
 
         let watch_path = watched.path().to_path_buf();
         let watch_path_clone = watch_path.clone();
@@ -912,12 +911,21 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path_clone,
+                    WatcherMode::Auto,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
             })
             .expect("spawn watcher thread");
 
-        // Wait for watcher to start
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for watcher to confirm it's ready
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("watcher init signal should arrive");
+        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
 
         // Create a video file OUTSIDE the watched directory, then move it in.
         // This triggers a rename event (RenameMode::Any on macOS) rather than
@@ -930,7 +938,7 @@ mod tests {
         fs::rename(&staged_video, &dest_video).unwrap();
 
         // Wait for debounce + processing
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         // Shutdown the watcher
         let _ = shutdown_tx.send(true);
@@ -981,6 +989,7 @@ mod tests {
         }));
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
 
         let watch_path = source.path().to_path_buf();
         let watch_path_clone = watch_path.clone();
@@ -992,19 +1001,28 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path_clone,
+                    WatcherMode::Auto,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
             })
             .expect("spawn watcher thread");
 
-        // Wait for watcher to start up
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for watcher to confirm it's ready
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("watcher init signal should arrive");
+        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
 
         // Create a video file in the watched directory
         let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
         fs::write(&video, b"video data").unwrap();
 
         // Wait for debounce (1s) + processing time
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         // Shutdown the watcher
         let _ = shutdown_tx.send(true);
@@ -1050,6 +1068,7 @@ mod tests {
         }));
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
 
         let watch_path = source.path().to_path_buf();
         let watch_path_clone = watch_path.clone();
@@ -1063,13 +1082,22 @@ mod tests {
                     .expect("build tokio runtime");
                 rt.block_on(
                     // 2-second debounce window
-                    watcher.run(&watch_path_clone, WatcherMode::Auto, 2, shutdown_rx),
+                    watcher.run_with_init_signal(
+                        &watch_path_clone,
+                        WatcherMode::Auto,
+                        2,
+                        shutdown_rx,
+                        init_tx,
+                    ),
                 )
             })
             .expect("spawn watcher thread");
 
-        // Wait for watcher to initialize
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for watcher to confirm it's ready
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("watcher init signal should arrive");
+        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
 
         // Rapidly create 5 video files within the debounce window
         for i in 1..=5 {
@@ -1203,6 +1231,7 @@ mod tests {
         }));
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
 
         let watch_path = source.path().to_path_buf();
         let watch_path_clone = watch_path.clone();
@@ -1214,19 +1243,28 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Review, 1, shutdown_rx))
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path_clone,
+                    WatcherMode::Review,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
             })
             .expect("spawn watcher thread");
 
-        // Wait for watcher to start
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for watcher to confirm it's ready
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("watcher init signal should arrive");
+        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
 
         // Create a video file
         let video = watch_path.join("The.Office.S02E03.720p.mkv");
         fs::write(&video, b"series data").unwrap();
 
         // Wait for debounce + processing
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         // Shutdown
         let _ = shutdown_tx.send(true);
@@ -1275,6 +1313,7 @@ mod tests {
         }));
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
 
         let watch_path = source.path().to_path_buf();
         let watch_path_clone = watch_path.clone();
@@ -1286,12 +1325,21 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("build tokio runtime");
-                rt.block_on(watcher.run(&watch_path_clone, WatcherMode::Auto, 1, shutdown_rx))
+                rt.block_on(watcher.run_with_init_signal(
+                    &watch_path_clone,
+                    WatcherMode::Auto,
+                    1,
+                    shutdown_rx,
+                    init_tx,
+                ))
             })
             .expect("spawn watcher thread");
 
-        // Wait for watcher to start
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for watcher to confirm it's ready
+        let init_result = init_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("watcher init signal should arrive");
+        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
 
         // Create non-video files only
         fs::write(watch_path.join("readme.txt"), b"text").unwrap();
@@ -1299,7 +1347,7 @@ mod tests {
         fs::write(watch_path.join("subtitle.srt"), b"sub").unwrap();
 
         // Wait for debounce + processing
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        std::thread::sleep(std::time::Duration::from_secs(5));
 
         // Shutdown
         let _ = shutdown_tx.send(true);

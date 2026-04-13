@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use tauri::State;
 
-use mediarr_core::{HistoryDb, RenamePlan, RenamePlanEntry, RenameRecord, RenameResult, Renamer};
+use mediarr_core::{RenamePlan, RenamePlanEntry, RenameResult, Renamer};
 
 use crate::error::{CommandError, CommandResult};
 use crate::state::ManagedState;
@@ -73,44 +73,8 @@ pub fn execute_renames(
     let results = renamer.execute(&plan);
 
     // Record successful renames in history
-    let batch_id = HistoryDb::generate_batch_id();
-    let timestamp = chrono::Utc::now().to_rfc3339();
-    let records: Vec<RenameRecord> = results
-        .iter()
-        .filter(|r| r.success)
-        .filter_map(|r| {
-            let meta = std::fs::metadata(&r.dest_path).ok()?;
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| {
-                    let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
-                    Some(
-                        chrono::DateTime::from_timestamp(duration.as_secs() as i64, 0)?
-                            .to_rfc3339(),
-                    )
-                })
-                .unwrap_or_default();
-
-            let source_key = r.source_path.to_string_lossy().to_string();
-            let info = media_info_map.get(&source_key).cloned().unwrap_or_default();
-
-            Some(RenameRecord {
-                batch_id: batch_id.clone(),
-                timestamp: timestamp.clone(),
-                source_path: r.source_path.clone(),
-                dest_path: r.dest_path.clone(),
-                media_info: info,
-                file_size: meta.len(),
-                file_mtime: mtime,
-            })
-        })
-        .collect();
-
-    if !records.is_empty() {
-        if let Err(e) = state.db.record_batch(&records) {
-            tracing::warn!(error = %e, "failed to record rename batch in history");
-        }
+    if let Err(e) = state.db.record_rename_results(&results, &media_info_map) {
+        tracing::warn!(error = %e, "failed to record rename batch in history");
     }
 
     Ok(results)

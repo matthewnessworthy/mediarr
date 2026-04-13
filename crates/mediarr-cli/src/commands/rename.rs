@@ -6,7 +6,7 @@
 use std::io::{self, BufRead, Write};
 
 use mediarr_core::{
-    Config, HistoryDb, RenamePlan, RenamePlanEntry, RenameRecord, Renamer, ScanStatus, Scanner,
+    Config, HistoryDb, RenamePlan, RenamePlanEntry, Renamer, ScanStatus, Scanner,
 };
 
 use crate::output::OutputFormatter;
@@ -120,14 +120,10 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
     formatter.rename_results(&results);
 
     // Record to history
-    let succeeded: Vec<_> = results.iter().filter(|r| r.success).collect();
-    if !succeeded.is_empty() {
+    if results.iter().any(|r| r.success) {
         let data_path = mediarr_core::config::default_data_path()?;
         let db = HistoryDb::open(&data_path)?;
-        let batch_id = HistoryDb::generate_batch_id();
-        let timestamp = chrono::Utc::now().to_rfc3339();
 
-        // Build a lookup from source_path -> MediaInfo for history recording
         let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> = selected
             .iter()
             .map(|r| {
@@ -138,33 +134,10 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
             })
             .collect();
 
-        let records: Vec<RenameRecord> = succeeded
-            .iter()
-            .map(|r| {
-                let meta = std::fs::metadata(&r.dest_path).ok();
-                let file_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-                let file_mtime = meta
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-                    .unwrap_or_default();
-
-                let source_key = r.source_path.to_string_lossy().to_string();
-                let info = media_info_map.get(&source_key).cloned().unwrap_or_default();
-
-                RenameRecord {
-                    batch_id: batch_id.clone(),
-                    timestamp: timestamp.clone(),
-                    source_path: r.source_path.clone(),
-                    dest_path: r.dest_path.clone(),
-                    media_info: info,
-                    file_size,
-                    file_mtime,
-                }
-            })
-            .collect();
-
-        db.record_batch(&records)?;
-        eprintln!("Batch {batch_id} recorded to history");
+        let batch_id = db.record_rename_results(&results, &media_info_map)?;
+        if !batch_id.is_empty() {
+            eprintln!("Batch {batch_id} recorded to history");
+        }
     }
 
     // Summary

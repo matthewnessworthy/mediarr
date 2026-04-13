@@ -304,39 +304,19 @@ pub fn approve_review_entry(state: State<'_, ManagedState>, id: i64) -> CommandR
     }
 
     // 5. Record to history
-    let batch_id = mediarr_core::HistoryDb::generate_batch_id();
-    let timestamp = chrono::Utc::now().to_rfc3339();
-
     let media_info: mediarr_core::MediaInfo =
         serde_json::from_str(&entry.media_info_json).unwrap_or_default();
 
-    let records: Vec<mediarr_core::RenameRecord> = results
-        .iter()
-        .filter(|r| r.success)
-        .filter_map(|r| {
-            let meta = std::fs::metadata(&r.dest_path).ok()?;
-            let file_mtime = meta
-                .modified()
-                .ok()
-                .map(|t| {
-                    let dt: chrono::DateTime<chrono::Utc> = t.into();
-                    dt.to_rfc3339()
-                })
-                .unwrap_or_default();
-
-            Some(mediarr_core::RenameRecord {
-                batch_id: batch_id.clone(),
-                timestamp: timestamp.clone(),
-                source_path: r.source_path.clone(),
-                dest_path: r.dest_path.clone(),
-                media_info: media_info.clone(),
-                file_size: meta.len(),
-                file_mtime,
-            })
-        })
+    let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> =
+        std::iter::once((
+            entry.source_path.to_string_lossy().to_string(),
+            media_info,
+        ))
         .collect();
 
-    state.db.record_batch(&records)?;
+    state
+        .db
+        .record_rename_results(&results, &media_info_map)?;
 
     // 6. Update review status
     state.db.update_review_status(id, ReviewStatus::Approved)?;

@@ -7,7 +7,7 @@
 use std::io::{self, BufRead, Write};
 
 use mediarr_core::{
-    Config, HistoryDb, RenamePlan, RenamePlanEntry, RenameRecord, Renamer, ReviewStatus,
+    Config, HistoryDb, RenamePlan, RenamePlanEntry, Renamer, ReviewStatus,
 };
 
 use crate::ReviewArgs;
@@ -242,29 +242,16 @@ fn execute_review_rename(
     }
 
     // Record to history
-    let batch_id = HistoryDb::generate_batch_id();
-    let timestamp = chrono::Utc::now().to_rfc3339();
-
     let media_info: mediarr_core::MediaInfo =
         serde_json::from_str(&entry.media_info_json).unwrap_or_default();
 
-    let meta = std::fs::metadata(&entry.proposed_path).ok();
-    let file_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-    let file_mtime = meta
-        .and_then(|m| m.modified().ok())
-        .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
-        .unwrap_or_default();
+    let media_info_map: std::collections::HashMap<String, mediarr_core::MediaInfo> =
+        std::iter::once((
+            entry.source_path.to_string_lossy().to_string(),
+            media_info,
+        ))
+        .collect();
 
-    let records = vec![RenameRecord {
-        batch_id,
-        timestamp,
-        source_path: entry.source_path.clone(),
-        dest_path: entry.proposed_path.clone(),
-        media_info,
-        file_size,
-        file_mtime,
-    }];
-
-    db.record_batch(&records)?;
+    db.record_rename_results(&results, &media_info_map)?;
     Ok(())
 }

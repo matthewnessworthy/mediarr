@@ -139,6 +139,62 @@ impl HistoryDb {
         Ok(())
     }
 
+    /// Record successful rename results to history with a single call.
+    ///
+    /// Generates a batch ID and timestamp, reads dest file metadata for
+    /// file_size and mtime, and looks up `MediaInfo` from the provided map
+    /// (keyed by source path string). Skips failed results and results
+    /// whose dest metadata cannot be read. Returns the batch ID on success,
+    /// or an empty string if no successful results exist.
+    pub fn record_rename_results(
+        &self,
+        results: &[RenameResult],
+        media_info_map: &std::collections::HashMap<String, MediaInfo>,
+    ) -> Result<String> {
+        let succeeded: Vec<_> = results.iter().filter(|r| r.success).collect();
+        if succeeded.is_empty() {
+            return Ok(String::new());
+        }
+
+        let batch_id = Self::generate_batch_id();
+        let timestamp = chrono::Utc::now().to_rfc3339();
+
+        let records: Vec<RenameRecord> = succeeded
+            .iter()
+            .filter_map(|r| {
+                let meta = std::fs::metadata(&r.dest_path).ok()?;
+                let file_mtime = meta
+                    .modified()
+                    .ok()
+                    .map(|t| {
+                        let dt: chrono::DateTime<chrono::Utc> = t.into();
+                        dt.to_rfc3339()
+                    })
+                    .unwrap_or_default();
+
+                let source_key = r.source_path.to_string_lossy().to_string();
+                let info = media_info_map.get(&source_key).cloned().unwrap_or_default();
+
+                Some(RenameRecord {
+                    batch_id: batch_id.clone(),
+                    timestamp: timestamp.clone(),
+                    source_path: r.source_path.clone(),
+                    dest_path: r.dest_path.clone(),
+                    media_info: info,
+                    file_size: meta.len(),
+                    file_mtime,
+                })
+            })
+            .collect();
+
+        if records.is_empty() {
+            return Ok(String::new());
+        }
+
+        self.record_batch(&records)?;
+        Ok(batch_id)
+    }
+
     /// List recent rename batches in reverse chronological order.
     ///
     /// Returns batch summaries with file counts. The `entries` field of each
