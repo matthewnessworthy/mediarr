@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "gsd-workflow": {
+      "command": "/Users/matthew/.local/share/fnm/node-versions/v22.22.1/installation/bin/node",
+      "args": [
+        "/Users/matthew/.local/share/fnm/node-versions/v22.22.1/installation/lib/node_modules/gsd-pi/packages/mcp-server/dist/cli.js"
+      ],
+      "cwd": "/Users/matthew/Sites/personal/mediarr",
+      "env": {
+        "GSD_CLI_PATH": "/Users/matthew/.local/state/fnm_multishells/54825_1775758840708/bin/gsd",
+        "GSD_WORKFLOW_EXECUTORS_MODULE": "/Users/matthew/.gsd/agent/extensions/gsd/tools/workflow-tool-executors.js",
+        "GSD_WORKFLOW_WRITE_GATE_MODULE": "/Users/matthew/.gsd/agent/extensions/gsd/bootstrap/write-gate.js",
+        "GSD_PERSIST_WRITE_GATE_STATE": "1",
+        "GSD_WORKFLOW_PROJECT_ROOT": "/Users/matthew/Sites/personal/mediarr"
+      }
+    }
+  }
+}

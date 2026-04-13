@@ -127,3 +127,27 @@ uat-*.png
 
 # Jetbrains IDE
 .idea/
+
+# ── GSD baseline (auto-generated) ──
+.gsd
+.gsd-id
+.bg-shell/
+*.swp
+*.swo
+.vscode/
+*.code-workspace
+.env
+.env.*
+!.env.example
+.next/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+venv/
+vendor/
+*.log
+coverage/
+.cache/
+tmp/
