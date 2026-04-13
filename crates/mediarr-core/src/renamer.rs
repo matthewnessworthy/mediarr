@@ -109,7 +109,7 @@ impl Renamer {
                         });
                     }
                     ConflictStrategy::NumericSuffix => {
-                        match resolve_numeric_suffix(&entry.dest_path) {
+                        match resolve_numeric_suffix(&entry.dest_path, &seen_dests) {
                             Ok(suffixed) => {
                                 debug!(
                                     source = %entry.source_path.display(),
@@ -157,10 +157,11 @@ impl Renamer {
     /// are not attempted (RENM-05: stop on failure).
     pub fn execute(&self, plan: &RenamePlan) -> Vec<RenameResult> {
         let mut results = Vec::with_capacity(plan.entries.len());
+        let mut seen_dests: HashSet<PathBuf> = HashSet::new();
 
         for entry in &plan.entries {
             // Determine effective destination (may change due to conflict resolution)
-            let effective_dest = if entry.dest_path.exists() {
+            let effective_dest = if entry.dest_path.exists() || seen_dests.contains(&entry.dest_path) {
                 match self.conflict_strategy {
                     ConflictStrategy::Skip => {
                         info!(
@@ -181,25 +182,27 @@ impl Renamer {
                             dest = %entry.dest_path.display(),
                             "overwriting existing target"
                         );
-                        // Remove existing file before move/copy
-                        if let Err(e) = std::fs::remove_file(&entry.dest_path) {
-                            warn!(
-                                dest = %entry.dest_path.display(),
-                                error = %e,
-                                "failed to remove existing target for overwrite"
-                            );
-                            results.push(RenameResult {
-                                source_path: entry.source_path.clone(),
-                                dest_path: entry.dest_path.clone(),
-                                success: false,
-                                error: Some(format!("overwrite failed: {e}")),
-                            });
-                            break;
+                        // Remove existing file before move/copy (only if it exists on disk)
+                        if entry.dest_path.exists() {
+                            if let Err(e) = std::fs::remove_file(&entry.dest_path) {
+                                warn!(
+                                    dest = %entry.dest_path.display(),
+                                    error = %e,
+                                    "failed to remove existing target for overwrite"
+                                );
+                                results.push(RenameResult {
+                                    source_path: entry.source_path.clone(),
+                                    dest_path: entry.dest_path.clone(),
+                                    success: false,
+                                    error: Some(format!("overwrite failed: {e}")),
+                                });
+                                break;
+                            }
                         }
                         entry.dest_path.clone()
                     }
                     ConflictStrategy::NumericSuffix => {
-                        match resolve_numeric_suffix(&entry.dest_path) {
+                        match resolve_numeric_suffix(&entry.dest_path, &seen_dests) {
                             Ok(suffixed) => {
                                 debug!(
                                     original = %entry.dest_path.display(),
@@ -251,6 +254,7 @@ impl Renamer {
                                 dest = %effective_dest.display(),
                                 "moved file successfully"
                             );
+                            seen_dests.insert(effective_dest.clone());
                             results.push(RenameResult {
                                 source_path: entry.source_path.clone(),
                                 dest_path: effective_dest,
@@ -321,6 +325,7 @@ impl Renamer {
                                 dest = %effective_dest.display(),
                                 "copied file successfully"
                             );
+                            seen_dests.insert(effective_dest.clone());
                             results.push(RenameResult {
                                 source_path: entry.source_path.clone(),
                                 dest_path: effective_dest,
@@ -363,7 +368,7 @@ impl Renamer {
 /// `/dest/Movie (2).mkv`, etc. up to 99. Returns the first non-existing path.
 ///
 /// Returns `MediError::ConflictResolutionExhausted` if all 99 suffixes are taken.
-fn resolve_numeric_suffix(dest: &Path) -> Result<PathBuf> {
+fn resolve_numeric_suffix(dest: &Path, seen: &HashSet<PathBuf>) -> Result<PathBuf> {
     let parent = dest.parent().unwrap_or_else(|| Path::new(""));
     let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
     let ext = dest.extension().and_then(|e| e.to_str());
@@ -374,7 +379,7 @@ fn resolve_numeric_suffix(dest: &Path) -> Result<PathBuf> {
             None => format!("{stem} ({i})"),
         };
         let candidate = parent.join(&filename);
-        if !candidate.exists() {
+        if !candidate.exists() && !seen.contains(&candidate) {
             return Ok(candidate);
         }
     }
@@ -810,7 +815,7 @@ mod tests {
         let dest = dir.path().join("Movie.mkv");
         std::fs::write(&dest, b"existing").unwrap();
 
-        let resolved = resolve_numeric_suffix(&dest).unwrap();
+        let resolved = resolve_numeric_suffix(&dest, &HashSet::new()).unwrap();
         assert_eq!(resolved, dir.path().join("Movie (1).mkv"));
     }
 
@@ -822,7 +827,7 @@ mod tests {
         std::fs::write(dir.path().join("Movie (1).mkv"), b"copy1").unwrap();
         std::fs::write(dir.path().join("Movie (2).mkv"), b"copy2").unwrap();
 
-        let resolved = resolve_numeric_suffix(&dest).unwrap();
+        let resolved = resolve_numeric_suffix(&dest, &HashSet::new()).unwrap();
         assert_eq!(resolved, dir.path().join("Movie (3).mkv"));
     }
 
@@ -838,7 +843,7 @@ mod tests {
             std::fs::write(&suffixed, b"taken").unwrap();
         }
 
-        let result = resolve_numeric_suffix(&base);
+        let result = resolve_numeric_suffix(&base, &HashSet::new());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -964,7 +969,127 @@ mod tests {
         let dest = dir.path().join("Movie");
         std::fs::write(&dest, b"existing").unwrap();
 
-        let resolved = resolve_numeric_suffix(&dest).unwrap();
+        let resolved = resolve_numeric_suffix(&dest, &HashSet::new()).unwrap();
         assert_eq!(resolved, dir.path().join("Movie (1)"));
+    }
+
+    // -----------------------------------------------------------------------
+    // R002: dry_run numeric suffix collision regression tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dry_run_numeric_suffix_two_files_same_nonexistent_dest_get_distinct_suffixes() {
+        let dir = TempDir::new().unwrap();
+        let src1 = dir.path().join("movie1.mkv");
+        let src2 = dir.path().join("movie2.mkv");
+        std::fs::write(&src1, b"vid1").unwrap();
+        std::fs::write(&src2, b"vid2").unwrap();
+
+        // Both target the same non-existent dest
+        let shared_dest = dir.path().join("Movie.mkv");
+
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::NumericSuffix, true);
+
+        let plan = RenamePlan {
+            entries: vec![
+                RenamePlanEntry {
+                    source_path: src1,
+                    dest_path: shared_dest.clone(),
+                },
+                RenamePlanEntry {
+                    source_path: src2,
+                    dest_path: shared_dest,
+                },
+            ],
+        };
+
+        let results = renamer.dry_run(&plan);
+        assert_eq!(results.len(), 2);
+        // First gets the base path, second gets a suffix
+        assert!(results[0].success);
+        assert!(results[1].success);
+        // They must have distinct dest_paths
+        assert_ne!(
+            results[0].dest_path, results[1].dest_path,
+            "two files targeting same dest must get distinct paths in dry_run"
+        );
+    }
+
+    #[test]
+    fn dry_run_numeric_suffix_three_files_same_dest_all_distinct() {
+        let dir = TempDir::new().unwrap();
+        let src1 = dir.path().join("a.mkv");
+        let src2 = dir.path().join("b.mkv");
+        let src3 = dir.path().join("c.mkv");
+        std::fs::write(&src1, b"1").unwrap();
+        std::fs::write(&src2, b"2").unwrap();
+        std::fs::write(&src3, b"3").unwrap();
+
+        // All target same existing dest
+        let dest = dir.path().join("Movie.mkv");
+        std::fs::write(&dest, b"existing").unwrap();
+
+        let renamer = Renamer::new(RenameOperation::Move, ConflictStrategy::NumericSuffix, true);
+
+        let plan = RenamePlan {
+            entries: vec![
+                RenamePlanEntry { source_path: src1, dest_path: dest.clone() },
+                RenamePlanEntry { source_path: src2, dest_path: dest.clone() },
+                RenamePlanEntry { source_path: src3, dest_path: dest },
+            ],
+        };
+
+        let results = renamer.dry_run(&plan);
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(|r| r.success));
+        // All dest paths must be unique
+        let dest_set: HashSet<&PathBuf> = results.iter().map(|r| &r.dest_path).collect();
+        assert_eq!(dest_set.len(), 3, "all three must have distinct dest paths");
+    }
+
+    #[test]
+    fn execute_numeric_suffix_two_files_same_dest_get_distinct_paths() {
+        let dir = TempDir::new().unwrap();
+        let src1 = dir.path().join("movie1.mkv");
+        let src2 = dir.path().join("movie2.mkv");
+        std::fs::write(&src1, b"vid1").unwrap();
+        std::fs::write(&src2, b"vid2").unwrap();
+
+        // Existing file at the target
+        let dest = dir.path().join("Movie.mkv");
+        std::fs::write(&dest, b"existing").unwrap();
+
+        let renamer = Renamer::new(RenameOperation::Copy, ConflictStrategy::NumericSuffix, true);
+
+        let plan = RenamePlan {
+            entries: vec![
+                RenamePlanEntry { source_path: src1, dest_path: dest.clone() },
+                RenamePlanEntry { source_path: src2, dest_path: dest },
+            ],
+        };
+
+        let results = renamer.execute(&plan);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].success);
+        assert!(results[1].success);
+        assert_ne!(
+            results[0].dest_path, results[1].dest_path,
+            "execute must assign distinct suffixed paths"
+        );
+        // Both dest files must exist
+        assert!(results[0].dest_path.exists());
+        assert!(results[1].dest_path.exists());
+    }
+
+    #[test]
+    fn resolve_suffix_respects_seen_set() {
+        let dir = TempDir::new().unwrap();
+        let dest = dir.path().join("Movie.mkv");
+        // No file on disk, but (1) is in the seen set
+        let mut seen = HashSet::new();
+        seen.insert(dir.path().join("Movie (1).mkv"));
+
+        let resolved = resolve_numeric_suffix(&dest, &seen).unwrap();
+        assert_eq!(resolved, dir.path().join("Movie (2).mkv"));
     }
 }
