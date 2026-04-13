@@ -738,6 +738,66 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // Copy + conflict strategy tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn copy_overwrite_preserves_source_and_replaces_dest() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("movie.mkv");
+        std::fs::write(&src, b"new content").unwrap();
+        let dest = dir.path().join("existing.mkv");
+        std::fs::write(&dest, b"old content").unwrap();
+
+        let renamer = Renamer::new(RenameOperation::Copy, ConflictStrategy::Overwrite, true);
+
+        let plan = RenamePlan {
+            entries: vec![RenamePlanEntry {
+                source_path: src.clone(),
+                dest_path: dest.clone(),
+            }],
+        };
+
+        let results = renamer.execute(&plan);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success);
+        assert!(src.exists(), "source must still exist after Copy+Overwrite");
+        assert_eq!(std::fs::read(&src).unwrap(), b"new content");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"new content");
+    }
+
+    #[test]
+    fn copy_numeric_suffix_preserves_source_and_creates_suffixed_copy() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("movie.mkv");
+        std::fs::write(&src, b"source data").unwrap();
+        let dest = dir.path().join("target.mkv");
+        std::fs::write(&dest, b"existing data").unwrap();
+
+        let renamer = Renamer::new(RenameOperation::Copy, ConflictStrategy::NumericSuffix, true);
+
+        let plan = RenamePlan {
+            entries: vec![RenamePlanEntry {
+                source_path: src.clone(),
+                dest_path: dest.clone(),
+            }],
+        };
+
+        let results = renamer.execute(&plan);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].success);
+        assert!(src.exists(), "source must still exist after Copy+NumericSuffix");
+        assert_eq!(std::fs::read(&src).unwrap(), b"source data");
+        // Original dest untouched
+        assert_eq!(std::fs::read(&dest).unwrap(), b"existing data");
+        // Suffixed copy created
+        let suffixed = dir.path().join("target (1).mkv");
+        assert!(suffixed.exists());
+        assert_eq!(std::fs::read(&suffixed).unwrap(), b"source data");
+        assert_eq!(results[0].dest_path, suffixed);
+    }
+
+    // -----------------------------------------------------------------------
     // Batch tests
     // -----------------------------------------------------------------------
 

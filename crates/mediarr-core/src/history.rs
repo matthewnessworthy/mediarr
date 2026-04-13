@@ -1439,6 +1439,60 @@ mod tests {
         assert_eq!(mode, "wal", "Journal mode should be WAL");
     }
 
+    // -----------------------------------------------------------------------
+    // clear_history tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_clear_history_empty_db_returns_zero() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let deleted = db.clear_history().unwrap();
+        assert_eq!(deleted, 0);
+    }
+
+    #[test]
+    fn test_clear_history_deletes_all_records() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let batch_id = HistoryDb::generate_batch_id();
+        let entries = vec![
+            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
+            make_record(&batch_id, Path::new("/src/b.mkv"), Path::new("/dst/b.mkv"), 2000),
+            make_record(&batch_id, Path::new("/src/c.mkv"), Path::new("/dst/c.mkv"), 3000),
+        ];
+        db.record_batch(&entries).unwrap();
+
+        let deleted = db.clear_history().unwrap();
+        assert_eq!(deleted, 3);
+
+        let count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM rename_history", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_clear_history_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let batch_id = HistoryDb::generate_batch_id();
+        let entries = vec![
+            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
+        ];
+        db.record_batch(&entries).unwrap();
+
+        let first = db.clear_history().unwrap();
+        assert_eq!(first, 1);
+
+        let second = db.clear_history().unwrap();
+        assert_eq!(second, 0);
+    }
+
     #[test]
     fn test_composite_index_exists() {
         let dir = tempfile::TempDir::new().unwrap();

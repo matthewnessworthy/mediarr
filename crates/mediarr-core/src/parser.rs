@@ -434,9 +434,10 @@ mod tests {
         match result {
             Err(MediError::NoTitle { .. }) => {} // expected
             Ok(info) => {
-                // hunch might still return something; if title is empty-ish, still valid
-                // The point is it shouldn't panic
-                assert!(!info.title.is_empty() || info.title.is_empty());
+                panic!(
+                    "Expected NoTitle error for bare extension, but got Ok with title {:?}",
+                    info.title
+                );
             }
             Err(e) => panic!("Expected NoTitle error, got: {e}"),
         }
