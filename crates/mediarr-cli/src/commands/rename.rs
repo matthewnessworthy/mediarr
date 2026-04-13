@@ -148,11 +148,11 @@ pub async fn execute(args: RenameArgs) -> anyhow::Result<()> {
         success_count, fail_count
     ));
 
-    // Exit code
+    // Return error with context for exit code handling in main
     if fail_count > 0 && success_count > 0 {
-        std::process::exit(3); // partial success
+        anyhow::bail!("partial rename failure: {success_count} succeeded, {fail_count} failed");
     } else if fail_count > 0 {
-        std::process::exit(1); // total failure
+        anyhow::bail!("all {fail_count} renames failed");
     }
 
     Ok(())

@@ -7,16 +7,15 @@ use tauri::State;
 use mediarr_core::{ScanResult, Scanner};
 
 use crate::error::{CommandError, CommandResult};
-use crate::state::ManagedState;
+use crate::state::ManagedConfig;
 
 /// Scan a folder for media files and return all results at once.
 #[tauri::command]
-pub fn scan_folder(state: State<'_, ManagedState>, path: String) -> CommandResult<Vec<ScanResult>> {
-    let config = state
-        .lock()
-        .map_err(|_| CommandError::StateLock)?
-        .config
-        .clone();
+pub fn scan_folder(
+    config: State<'_, ManagedConfig>,
+    path: String,
+) -> CommandResult<Vec<ScanResult>> {
+    let config = config.read().map_err(|_| CommandError::StateLock)?.clone();
     let scanner = Scanner::new(config);
     let results = scanner.scan_folder(Path::new(&path))?;
     Ok(results)
@@ -29,14 +28,10 @@ pub fn scan_folder(state: State<'_, ManagedState>, path: String) -> CommandResul
 /// overkill for drag-and-drop where the user may drop mixed content).
 #[tauri::command]
 pub fn scan_files(
-    state: State<'_, ManagedState>,
+    config: State<'_, ManagedConfig>,
     paths: Vec<String>,
 ) -> CommandResult<Vec<ScanResult>> {
-    let config = state
-        .lock()
-        .map_err(|_| CommandError::StateLock)?
-        .config
-        .clone();
+    let config = config.read().map_err(|_| CommandError::StateLock)?.clone();
     let scanner = Scanner::new(config);
     let mut results = Vec::new();
     for p in &paths {
@@ -66,15 +61,11 @@ pub enum ScanEvent {
 /// Scan a folder for media files, streaming results back via a channel.
 #[tauri::command]
 pub fn scan_folder_streaming(
-    state: State<'_, ManagedState>,
+    config: State<'_, ManagedConfig>,
     path: String,
     on_event: Channel<ScanEvent>,
 ) -> CommandResult<()> {
-    let config = state
-        .lock()
-        .map_err(|_| CommandError::StateLock)?
-        .config
-        .clone();
+    let config = config.read().map_err(|_| CommandError::StateLock)?.clone();
     let scanner = Scanner::new(config);
     let results = scanner.scan_folder(Path::new(&path))?;
     let total = results.len();

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use mediarr_core::{Config, HistoryDb};
@@ -18,18 +18,17 @@ pub struct WatcherHandle {
     pub thread_handle: JoinHandle<()>,
 }
 
-/// Shared application state managed by Tauri.
+/// Application configuration, behind an `RwLock` for concurrent read access.
 ///
-/// Wrapped in a `Mutex` and registered via `tauri::Builder::manage()`.
-/// Tauri commands access it through `tauri::State<ManagedState>`.
-pub struct AppState {
-    /// Current application configuration.
-    pub config: Config,
-    /// SQLite rename history database.
-    pub db: HistoryDb,
-    /// Currently running watchers, keyed by watch path string.
-    pub active_watchers: HashMap<String, WatcherHandle>,
-}
+/// Config reads (scan, dry-run, list watchers) only need a shared read lock,
+/// so they no longer block each other. Only mutations (update_config,
+/// start/stop_watcher) acquire a write lock.
+pub type ManagedConfig = RwLock<Config>;
 
-/// Type alias for the Tauri-managed state.
-pub type ManagedState = Mutex<AppState>;
+/// SQLite rename history database, behind a `Mutex`.
+///
+/// `rusqlite::Connection` is `!Sync`, so a `Mutex` is required.
+pub type ManagedDb = Mutex<HistoryDb>;
+
+/// Currently running watchers, keyed by watch path string.
+pub type ManagedWatchers = Mutex<HashMap<String, WatcherHandle>>;

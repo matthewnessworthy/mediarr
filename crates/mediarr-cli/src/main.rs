@@ -158,7 +158,11 @@ async fn main() {
     };
 
     if let Err(e) = result {
-        eprintln!("Error: {e:#}");
+        let msg = format!("{e:#}");
+        eprintln!("Error: {msg}");
+        if msg.contains("partial rename failure") {
+            process::exit(3);
+        }
         process::exit(1);
     }
 }

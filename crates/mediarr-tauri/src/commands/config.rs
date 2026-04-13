@@ -5,22 +5,25 @@ use tauri::State;
 use mediarr_core::{config, Config, MediaInfo, MediaType, TemplateEngine, TemplateWarning};
 
 use crate::error::{CommandError, CommandResult};
-use crate::state::ManagedState;
+use crate::state::ManagedConfig;
 
 /// Get the current application configuration.
 #[tauri::command]
-pub fn get_config(state: State<'_, ManagedState>) -> CommandResult<Config> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    Ok(state.config.clone())
+pub fn get_config(config: State<'_, ManagedConfig>) -> CommandResult<Config> {
+    let config = config.read().map_err(|_| CommandError::StateLock)?;
+    Ok(config.clone())
 }
 
 /// Update the application configuration and persist to disk.
 #[tauri::command]
-pub fn update_config(state: State<'_, ManagedState>, config: Config) -> CommandResult<()> {
-    let mut state = state.lock().map_err(|_| CommandError::StateLock)?;
+pub fn update_config(
+    managed_config: State<'_, ManagedConfig>,
+    config: Config,
+) -> CommandResult<()> {
+    let mut current = managed_config.write().map_err(|_| CommandError::StateLock)?;
     let config_path = config::default_config_path()?;
     config.save(&config_path)?;
-    state.config = config;
+    *current = config;
     Ok(())
 }
 
@@ -37,16 +40,16 @@ pub fn preview_template(template: String, media_info: MediaInfo) -> CommandResul
 /// the source file's parent directory (in-place rename).
 #[tauri::command]
 pub fn preview_proposed_path(
-    state: State<'_, ManagedState>,
+    config: State<'_, ManagedConfig>,
     template: String,
     media_info: MediaInfo,
     source_path: String,
 ) -> CommandResult<String> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
+    let config = config.read().map_err(|_| CommandError::StateLock)?;
     let engine = TemplateEngine::new();
     let relative_path = engine.render(&template, &media_info)?;
 
-    let proposed_path = if let Some(ref output_dir) = state.config.general.output_dir {
+    let proposed_path = if let Some(ref output_dir) = config.general.output_dir {
         output_dir.join(&relative_path)
     } else {
         Path::new(&source_path)

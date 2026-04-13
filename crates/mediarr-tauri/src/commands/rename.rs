@@ -7,7 +7,7 @@ use tauri::State;
 use mediarr_core::{RenamePlan, RenamePlanEntry, RenameResult, Renamer};
 
 use crate::error::{CommandError, CommandResult};
-use crate::state::ManagedState;
+use crate::state::{ManagedConfig, ManagedDb};
 
 /// A rename entry received from the frontend.
 #[derive(Deserialize)]
@@ -22,11 +22,11 @@ pub struct RenameEntry {
 /// Validate a rename plan without touching the filesystem.
 #[tauri::command]
 pub fn dry_run_renames(
-    state: State<'_, ManagedState>,
+    config: State<'_, ManagedConfig>,
     entries: Vec<RenameEntry>,
 ) -> CommandResult<Vec<RenameResult>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let renamer = Renamer::from_config(&state.config.general);
+    let config = config.read().map_err(|_| CommandError::StateLock)?;
+    let renamer = Renamer::from_config(&config.general);
     let plan = RenamePlan {
         entries: entries
             .into_iter()
@@ -45,11 +45,12 @@ pub fn dry_run_renames(
 /// Uses real `MediaInfo` from scan results when available for accurate history.
 #[tauri::command]
 pub fn execute_renames(
-    state: State<'_, ManagedState>,
+    config: State<'_, ManagedConfig>,
+    db: State<'_, ManagedDb>,
     entries: Vec<RenameEntry>,
 ) -> CommandResult<Vec<RenameResult>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let renamer = Renamer::from_config(&state.config.general);
+    let config = config.read().map_err(|_| CommandError::StateLock)?;
+    let renamer = Renamer::from_config(&config.general);
 
     // Build source_path -> MediaInfo lookup before consuming entries
     let media_info_map: HashMap<String, mediarr_core::MediaInfo> = entries
@@ -72,10 +73,9 @@ pub fn execute_renames(
     };
     let results = renamer.execute(&plan);
 
-    // Record successful renames in history
-    if let Err(e) = state.db.record_rename_results(&results, &media_info_map) {
-        tracing::warn!(error = %e, "failed to record rename batch in history");
-    }
+    // Record successful renames in history — propagate errors
+    let db = db.lock().map_err(|_| CommandError::StateLock)?;
+    db.record_rename_results(&results, &media_info_map)?;
 
     Ok(results)
 }

@@ -3,7 +3,7 @@ mod error;
 mod state;
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use mediarr_core::{config, Config, HistoryDb, WatcherManager, WatcherMode};
 use tracing::{error, info, warn};
@@ -54,11 +54,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .manage(Mutex::new(state::AppState {
-            config,
-            db,
-            active_watchers: HashMap::new(),
-        }))
+        .manage::<state::ManagedConfig>(RwLock::new(config))
+        .manage::<state::ManagedDb>(Mutex::new(db))
+        .manage::<state::ManagedWatchers>(Mutex::new(HashMap::new()))
         .invoke_handler(tauri::generate_handler![
             commands::scan::scan_folder,
             commands::scan::scan_folder_streaming,
@@ -181,17 +179,18 @@ pub(crate) fn spawn_watcher_thread(
 fn auto_start_watchers(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
 
-    let managed: tauri::State<'_, state::ManagedState> = app.state();
-    let mut state = match managed.lock() {
-        Ok(s) => s,
+    let config_state: tauri::State<'_, state::ManagedConfig> = app.state();
+    let watchers_state: tauri::State<'_, state::ManagedWatchers> = app.state();
+
+    let config = match config_state.read() {
+        Ok(c) => c,
         Err(_) => {
-            error!("failed to lock state for auto-start watchers");
+            error!("failed to read config for auto-start watchers");
             return;
         }
     };
 
-    let active_configs: Vec<_> = state
-        .config
+    let active_configs: Vec<_> = config
         .watchers
         .iter()
         .filter(|w| w.active)
@@ -215,14 +214,22 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
         }
     };
 
+    let mut watchers = match watchers_state.lock() {
+        Ok(w) => w,
+        Err(_) => {
+            error!("failed to lock watchers for auto-start");
+            return;
+        }
+    };
+
     for wc in active_configs {
         let path_str = wc.path.to_string_lossy().to_string();
 
-        if state.active_watchers.contains_key(&path_str) {
+        if watchers.contains_key(&path_str) {
             continue;
         }
 
-        let resolved_config = wc.resolve_config(&state.config);
+        let resolved_config = wc.resolve_config(&config);
 
         let app_handle = app.clone();
         let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
@@ -248,7 +255,7 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
         match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 info!(path = %path_str, "auto-started watcher successfully");
-                state.active_watchers.insert(path_str, handle);
+                watchers.insert(path_str, handle);
             }
             Ok(Err(msg)) => {
                 warn!(path = %path_str, "auto-start watcher failed: {msg}");

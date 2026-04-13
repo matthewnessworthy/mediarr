@@ -3,56 +3,47 @@ use tauri::State;
 use mediarr_core::{BatchSummary, RenameRecord, RenameResult, UndoEligibility};
 
 use crate::error::{CommandError, CommandResult};
-use crate::state::ManagedState;
+use crate::state::ManagedDb;
 
 /// List rename batches from history, newest first.
 #[tauri::command]
 pub fn list_batches(
-    state: State<'_, ManagedState>,
+    db: State<'_, ManagedDb>,
     limit: Option<u32>,
 ) -> CommandResult<Vec<BatchSummary>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let batches = state.db.list_batches(limit.map(|l| l as usize))?;
+    let db = db.lock().map_err(|_| CommandError::StateLock)?;
+    let batches = db.list_batches(limit.map(|l| l as usize))?;
     Ok(batches)
 }
 
 /// Get all rename records for a specific batch.
 #[tauri::command]
-pub fn get_batch(
-    state: State<'_, ManagedState>,
-    batch_id: String,
-) -> CommandResult<Vec<RenameRecord>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let records = state.db.get_batch(&batch_id)?;
+pub fn get_batch(db: State<'_, ManagedDb>, batch_id: String) -> CommandResult<Vec<RenameRecord>> {
+    let db = db.lock().map_err(|_| CommandError::StateLock)?;
+    let records = db.get_batch(&batch_id)?;
     Ok(records)
 }
 
 /// Clear all rename history.
 #[tauri::command]
-pub fn clear_history(state: State<'_, ManagedState>) -> CommandResult<usize> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let deleted = state.db.clear_history()?;
+pub fn clear_history(db: State<'_, ManagedDb>) -> CommandResult<usize> {
+    let db = db.lock().map_err(|_| CommandError::StateLock)?;
+    let deleted = db.clear_history()?;
     Ok(deleted)
 }
 
 /// Check whether a rename batch is eligible for undo.
 #[tauri::command]
-pub fn check_undo(
-    state: State<'_, ManagedState>,
-    batch_id: String,
-) -> CommandResult<UndoEligibility> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let eligibility = state.db.check_undo_eligible(&batch_id)?;
+pub fn check_undo(db: State<'_, ManagedDb>, batch_id: String) -> CommandResult<UndoEligibility> {
+    let db = db.lock().map_err(|_| CommandError::StateLock)?;
+    let eligibility = db.check_undo_eligible(&batch_id)?;
     Ok(eligibility)
 }
 
 /// Execute an undo operation, reversing all renames in a batch.
 #[tauri::command]
-pub fn execute_undo(
-    state: State<'_, ManagedState>,
-    batch_id: String,
-) -> CommandResult<Vec<RenameResult>> {
-    let state = state.lock().map_err(|_| CommandError::StateLock)?;
-    let results = state.db.execute_undo(&batch_id)?;
+pub fn execute_undo(db: State<'_, ManagedDb>, batch_id: String) -> CommandResult<Vec<RenameResult>> {
+    let db = db.lock().map_err(|_| CommandError::StateLock)?;
+    let results = db.execute_undo(&batch_id)?;
     Ok(results)
 }

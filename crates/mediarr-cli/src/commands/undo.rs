@@ -17,11 +17,16 @@ pub fn execute(args: UndoArgs) -> anyhow::Result<()> {
     let eligibility = db.check_undo_eligible(&args.batch_id)?;
 
     if !eligibility.eligible {
-        eprintln!("Batch {} is not eligible for undo:", args.batch_id);
-        for issue in &eligibility.ineligible_reasons {
-            eprintln!("  - {}: {}", issue.dest_path.display(), issue.reason);
-        }
-        std::process::exit(1);
+        let issues: Vec<String> = eligibility
+            .ineligible_reasons
+            .iter()
+            .map(|issue| format!("  - {}: {}", issue.dest_path.display(), issue.reason))
+            .collect();
+        anyhow::bail!(
+            "Batch {} is not eligible for undo:\n{}",
+            args.batch_id,
+            issues.join("\n")
+        );
     }
 
     // Show what will be undone
