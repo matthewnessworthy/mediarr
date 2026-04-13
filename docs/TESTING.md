@@ -199,6 +199,6 @@ Tests run automatically via GitHub Actions on every push to `main` and every pul
 
 As of last count, the workspace contains approximately:
 
-- **369 Rust tests** across all three crates (335 in `mediarr-core`, 10 in `mediarr-cli`, 20 in `mediarr-tauri`, 4 integration tests in `mediarr-core`)
+- **369 Rust tests** across all three crates (335 in `mediarr-core`, 10 in `mediarr-cli`, 20 in `mediarr-tauri`, 4 integration tests in `mediarr-core`) — up from 362 before the M001 hardening milestone
 - **6 frontend unit test files** covering state management and utilities
 - **5 frontend E2E test files** covering navigation, scan, settings, history, and watcher views
