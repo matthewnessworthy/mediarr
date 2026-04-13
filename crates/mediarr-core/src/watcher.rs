@@ -291,8 +291,11 @@ impl WatcherManager {
                 // Fall back to the raw path if canonicalization fails (e.g.
                 // the file was already moved by a prior event in this batch).
                 let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+                let raw = path.to_path_buf();
 
-                if self.recently_processed.contains_key(&canonical) {
+                if self.recently_processed.contains_key(&canonical)
+                    || self.recently_processed.contains_key(&raw)
+                {
                     debug!(path = %path.display(), "skipping recently-processed file (dedup)");
                     continue;
                 }
@@ -306,6 +309,10 @@ impl WatcherManager {
 
                 // Mark as processed BEFORE processing, so concurrent events
                 // for the same path in this batch are also skipped.
+                // Insert both canonical and raw paths so dedup catches either form.
+                if canonical != raw {
+                    self.recently_processed.insert(raw, now);
+                }
                 self.recently_processed.insert(canonical, now);
 
                 if let Err(e) = self.process_single_file(path, watch_path, mode) {
@@ -549,7 +556,7 @@ mod tests {
         let output = TempDir::new().unwrap();
         let db_path = tmp.path().join("test.db");
 
-        let mut watcher = setup_watcher(output.path(), &db_path);
+        let watcher = setup_watcher(output.path(), &db_path);
         assert_eq!(watcher.max_activity_events, DEFAULT_MAX_EVENTS);
     }
 
@@ -1458,5 +1465,135 @@ mod tests {
         );
 
         let _ = thread_handle.join();
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression test for R004: watcher dedup checks both canonical and raw path.
+    // When a file is accessed via a symlink (e.g. /var -> /private/var on macOS),
+    // the canonical path differs from the raw path. The dedup cache must catch both.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dedup_catches_raw_path_when_canonical_is_cached() {
+        use std::time::Instant;
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+        let mut watcher = WatcherManager::new(config, history);
+
+        // Create a video file
+        let video = source
+            .path()
+            .join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        // Simulate: the canonical path is already in the dedup cache
+        let canonical = video.canonicalize().unwrap();
+        watcher
+            .recently_processed
+            .insert(canonical.clone(), Instant::now());
+
+        // Create a symlink to the source dir so the raw path differs
+        let link_parent = TempDir::new().unwrap();
+        let link_dir = link_parent.path().join("link_to_source");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(source.path(), &link_dir).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(source.path(), &link_dir).unwrap();
+
+        let raw_video = link_dir.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
+        assert!(raw_video.exists(), "symlinked video should exist");
+        assert_ne!(
+            raw_video, canonical,
+            "raw and canonical should differ for this test to be meaningful"
+        );
+
+        // Fire a debounced event with the raw (symlinked) path
+        let event = notify_debouncer_full::DebouncedEvent {
+            event: notify::Event {
+                kind: notify::EventKind::Create(notify::event::CreateKind::File),
+                paths: vec![raw_video.clone()],
+                attrs: Default::default(),
+            },
+            time: Instant::now(),
+        };
+
+        // Track events via callback
+        let event_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = event_count.clone();
+        watcher.set_on_event(Box::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+
+        watcher.process_debounced_events(&[event], source.path(), WatcherMode::Auto);
+
+        // The event should have been deduped — canonical resolves to the cached path
+        let count = event_count.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            count, 0,
+            "event should be deduped because canonical matches cached path, but got {count} events"
+        );
+    }
+
+    /// Regression test for R004: after processing a file via symlinked path,
+    /// both canonical AND raw paths should be in the dedup cache.
+    #[test]
+    fn dedup_inserts_both_canonical_and_raw_paths() {
+        use std::time::Instant;
+
+        let source = TempDir::new().unwrap();
+        let output = TempDir::new().unwrap();
+        let db_dir = TempDir::new().unwrap();
+        let db_path = db_dir.path().join("test.db");
+
+        let config = test_config(output.path());
+        let history = HistoryDb::open(&db_path).unwrap();
+        let mut watcher = WatcherManager::new(config, history);
+
+        // Create a video file
+        let video = source
+            .path()
+            .join("Test.Movie.2020.720p.WEB.x264.mkv");
+        fs::write(&video, b"video data").unwrap();
+
+        let canonical = video.canonicalize().unwrap();
+
+        // Create symlink so raw != canonical
+        let link_parent = TempDir::new().unwrap();
+        let link_dir = link_parent.path().join("link_to_source");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(source.path(), &link_dir).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(source.path(), &link_dir).unwrap();
+
+        let raw_video = link_dir.join("Test.Movie.2020.720p.WEB.x264.mkv");
+        assert_ne!(raw_video, canonical);
+
+        // Process the file via the symlinked (raw) path
+        let event = notify_debouncer_full::DebouncedEvent {
+            event: notify::Event {
+                kind: notify::EventKind::Create(notify::event::CreateKind::File),
+                paths: vec![raw_video.clone()],
+                attrs: Default::default(),
+            },
+            time: Instant::now(),
+        };
+
+        watcher.process_debounced_events(&[event], source.path(), WatcherMode::Auto);
+
+        // Both canonical and raw paths should be in the dedup cache
+        assert!(
+            watcher.recently_processed.contains_key(&canonical),
+            "canonical path should be in dedup cache"
+        );
+        assert!(
+            watcher.recently_processed.contains_key(&raw_video),
+            "raw (symlinked) path should also be in dedup cache"
+        );
     }
 }

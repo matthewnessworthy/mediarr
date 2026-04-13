@@ -283,6 +283,11 @@ impl HistoryDb {
 
         let mut results = Vec::new();
 
+        // Use a transaction so partially-successful undos are atomic:
+        // each successfully-moved entry is deleted individually, while
+        // failed entries remain in the DB for retry.
+        let tx = self.conn.unchecked_transaction()?;
+
         for entry in &entries {
             // Create parent directory for source path if needed
             if let Some(parent) = entry.source_path.parent() {
@@ -304,6 +309,11 @@ impl HistoryDb {
                         to = ?entry.source_path,
                         "undo: moved file back"
                     );
+                    // Delete this entry from DB immediately — it was successfully undone
+                    tx.execute(
+                        "DELETE FROM rename_history WHERE batch_id = ?1 AND dest_path = ?2",
+                        params![batch_id, entry.dest_path.to_string_lossy()],
+                    )?;
                     results.push(RenameResult {
                         source_path: entry.dest_path.clone(),
                         dest_path: entry.source_path.clone(),
@@ -323,17 +333,13 @@ impl HistoryDb {
             }
         }
 
-        // If all moves succeeded, remove batch from database atomically.
-        // unchecked_transaction works on &Connection (execute_undo takes &self).
-        // If the process crashes mid-commit, the batch stays in history (safe fallback).
+        tx.commit()?;
+
         if results.iter().all(|r| r.success) {
-            let tx = self.conn.unchecked_transaction()?;
-            tx.execute(
-                "DELETE FROM rename_history WHERE batch_id = ?1",
-                params![batch_id],
-            )?;
-            tx.commit()?;
-            info!(batch_id, "undo complete, batch removed from history");
+            info!(batch_id, "undo complete, all entries removed from history");
+        } else {
+            let failed = results.iter().filter(|r| !r.success).count();
+            warn!(batch_id, failed, "partial undo — failed entries remain in history for retry");
         }
 
         Ok(results)
@@ -938,6 +944,73 @@ mod tests {
             }
             other => panic!("expected UndoNotEligible, got: {other:?}"),
         }
+    }
+
+    /// Regression test for R003: partial undo should delete successfully-moved
+    /// entries from DB while keeping failed entries for retry.
+    #[test]
+    fn test_partial_undo_removes_only_successful_entries_from_db() {
+        let dir = TempDir::new().unwrap();
+        let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
+
+        let source_dir = dir.path().join("source_dir");
+        let dest_dir = dir.path().join("dest_dir");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&dest_dir).unwrap();
+
+        // Entry 1: will succeed — normal source path
+        let source1 = source_dir.join("movie1.mkv");
+        let dest1 = dest_dir.join("movie1.mkv");
+        std::fs::write(&dest1, "movie1").unwrap();
+
+        // Entry 2: will fail — source parent is blocked by a regular file
+        // so create_dir_all fails when trying to create the parent dir
+        let blocker = dir.path().join("blocker_file");
+        std::fs::write(&blocker, "I am a file, not a directory").unwrap();
+        let source2 = blocker.join("subdir").join("movie2.mkv");
+        let dest2 = dest_dir.join("movie2.mkv");
+        std::fs::write(&dest2, "movie2").unwrap();
+
+        let batch_id = HistoryDb::generate_batch_id();
+        let record1 = make_record(
+            &batch_id,
+            &source1,
+            &dest1,
+            std::fs::metadata(&dest1).unwrap().len(),
+        );
+        let record2 = make_record(
+            &batch_id,
+            &source2,
+            &dest2,
+            std::fs::metadata(&dest2).unwrap().len(),
+        );
+
+        db.record_batch(&[record1, record2]).unwrap();
+
+        // Verify batch has 2 entries
+        let entries_before = db.get_batch(&batch_id).unwrap();
+        assert_eq!(entries_before.len(), 2);
+
+        let results = db.execute_undo(&batch_id).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Entry 1 should succeed, entry 2 should fail
+        let successes: Vec<_> = results.iter().filter(|r| r.success).collect();
+        let failures: Vec<_> = results.iter().filter(|r| !r.success).collect();
+        assert_eq!(successes.len(), 1, "one entry should have been undone");
+        assert_eq!(failures.len(), 1, "one entry should have failed");
+
+        // Movie1 should be back at source
+        assert!(source1.exists());
+
+        // DB should only contain the failed entry
+        let remaining = db.get_batch(&batch_id).unwrap();
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the failed entry should remain in DB"
+        );
+        assert_eq!(remaining[0].dest_path, dest2);
     }
 
     #[test]
