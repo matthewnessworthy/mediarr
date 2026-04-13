@@ -129,7 +129,6 @@
 {:else}
 	<!-- Full mode: drop zone + button + recent -->
 	<div class="flex flex-col items-center gap-6">
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class={cn(
 				'w-full max-w-lg rounded-lg border border-dashed border-border/60 px-8 py-12 text-center transition-colors',

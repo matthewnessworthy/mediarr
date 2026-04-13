@@ -52,7 +52,6 @@
 			style="transition-duration: var(--duration-normal);"
 		></span>
 
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="flex-1 min-w-0 cursor-pointer"
 			role="button"

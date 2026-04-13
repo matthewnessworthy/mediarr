@@ -27,7 +27,7 @@
 	 * Build the full options list: current info first, then backend-provided
 	 * alternatives, then synthetic alternatives for any missing media types.
 	 */
-	const allOptions = $derived(() => {
+	const allOptions = $derived.by(() => {
 		const options: MediaInfo[] = [currentInfo, ...alternatives];
 		const presentTypes = new Set(options.map((o) => o.media_type));
 
@@ -61,7 +61,7 @@
 		if (selectedIndex === 0) return; // No change
 		resolving = true;
 		try {
-			onResolve(allOptions()[selectedIndex]);
+			onResolve(allOptions[selectedIndex]);
 		} finally {
 			resolving = false;
 		}
@@ -76,7 +76,7 @@
 
 	<!-- Radio options -->
 	<div class="flex flex-col gap-1.5">
-		{#each allOptions() as option, i}
+		{#each allOptions as option, i}
 			<label
 				class={cn(
 					'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md cursor-pointer transition-colors duration-100 hover:bg-accent/20',

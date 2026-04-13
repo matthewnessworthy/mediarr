@@ -16,14 +16,14 @@
 	const hasResults = $derived(scanState.results.length > 0);
 
 	// Header checkbox state: computed from collision-aware selection
-	const selectableCount = $derived(() => {
+	const selectableCount = $derived.by(() => {
 		const collisionPaths = new Set<string>();
 		for (const siblings of scanState.conflictGroups.values()) {
 			for (const p of siblings) collisionPaths.add(p);
 		}
 		return scanState.filteredResults.filter((r) => !collisionPaths.has(r.source_path)).length;
 	});
-	const allSelected = $derived(selectableCount() > 0 && scanState.filteredSelectedCount >= selectableCount());
+	const allSelected = $derived(selectableCount > 0 && scanState.filteredSelectedCount >= selectableCount);
 	const someSelected = $derived(scanState.filteredSelectedCount > 0);
 	const headerIndeterminate = $derived(someSelected && !allSelected);
 

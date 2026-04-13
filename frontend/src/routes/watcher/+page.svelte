@@ -166,10 +166,11 @@
 	});
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="p-8 max-w-4xl min-h-full transition-colors {dragOver ? 'bg-accent/10' : ''}"
 	style="transition-duration: var(--duration-normal);"
+	role="region"
+	aria-label="Drop folder here to watch"
 	ondragover={(e) => { e.preventDefault(); dragOver = true; }}
 	ondragleave={() => (dragOver = false)}
 	ondrop={(e) => e.preventDefault()}

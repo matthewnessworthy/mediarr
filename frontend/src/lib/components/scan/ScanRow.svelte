@@ -128,9 +128,14 @@
 					<Check class="size-3 text-emerald-400/60" />
 				</div>
 			{:else}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="mt-0.5" onclick={handleCheckboxClick}>
+				<div
+					class="mt-0.5"
+					role="checkbox"
+					tabindex="0"
+					aria-checked={selected}
+					onclick={handleCheckboxClick}
+					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleSelect(); } }}
+				>
 					<Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} />
 				</div>
 			{/if}
