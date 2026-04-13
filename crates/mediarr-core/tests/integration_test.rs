@@ -302,3 +302,118 @@ fn test_scan_filter_by_media_type() {
         "No filter should return all results"
     );
 }
+
+#[test]
+fn test_subtitle_discover_plan_rename_pipeline() {
+    // Full subtitle pipeline: scan (discovers subtitles) → build plan (including subs) → execute → verify
+
+    let source_dir = TempDir::new().unwrap();
+    let output_dir = TempDir::new().unwrap();
+
+    // Create video file
+    let video = source_dir
+        .path()
+        .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv");
+    fs::write(&video, b"video content").unwrap();
+
+    // Create sidecar subtitle (same dir, same base name, .en.srt suffix)
+    let subtitle = source_dir
+        .path()
+        .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.en.srt");
+    fs::write(&subtitle, b"1\n00:00:01,000 --> 00:00:02,000\nHello\n").unwrap();
+
+    // Scan with subtitles enabled (default)
+    let config = config_with_output(output_dir.path());
+    assert!(config.subtitles.enabled, "subtitles should be enabled by default");
+
+    let scanner = Scanner::new(config.clone());
+    let results = scanner.scan_folder(source_dir.path()).unwrap();
+    assert_eq!(results.len(), 1, "Should find 1 video file");
+
+    let result = &results[0];
+    assert!(
+        !result.subtitles.is_empty(),
+        "Should discover at least 1 subtitle, found none"
+    );
+    assert_eq!(
+        result.subtitles[0].language, "en",
+        "Subtitle language should be 'en'"
+    );
+
+    // Verify subtitle proposed_path uses the video's output directory (R001 regression)
+    let video_output_dir = result.proposed_path.parent().unwrap();
+    let sub_output_dir = result.subtitles[0].proposed_path.parent().unwrap();
+    assert_eq!(
+        video_output_dir, sub_output_dir,
+        "Subtitle proposed_path should be in the same directory as the video's proposed_path.\n\
+         Video dir: {:?}\n\
+         Sub dir:   {:?}",
+        video_output_dir, sub_output_dir
+    );
+
+    // Build rename plan including both video and subtitles
+    let mut plan_entries: Vec<RenamePlanEntry> = Vec::new();
+    plan_entries.push(RenamePlanEntry {
+        source_path: result.source_path.clone(),
+        dest_path: result.proposed_path.clone(),
+    });
+    for sub in &result.subtitles {
+        plan_entries.push(RenamePlanEntry {
+            source_path: sub.source_path.clone(),
+            dest_path: sub.proposed_path.clone(),
+        });
+    }
+    let plan = RenamePlan {
+        entries: plan_entries,
+    };
+
+    assert!(
+        plan.entries.len() >= 2,
+        "Plan should have at least 2 entries (video + subtitle), got {}",
+        plan.entries.len()
+    );
+
+    // Execute rename
+    let renamer = Renamer::from_config(&config.general);
+    let exec_results = renamer.execute(&plan);
+
+    assert!(
+        exec_results.iter().all(|r| r.success),
+        "All renames should succeed: {:?}",
+        exec_results
+            .iter()
+            .filter(|r| !r.success)
+            .map(|r| r.error.as_ref())
+            .collect::<Vec<_>>()
+    );
+
+    // Verify video moved to output directory
+    assert!(
+        result.proposed_path.exists(),
+        "Video should exist at proposed path: {:?}",
+        result.proposed_path
+    );
+    assert!(!video.exists(), "Source video should no longer exist");
+
+    // Verify subtitle moved to output directory
+    let sub_proposed = &result.subtitles[0].proposed_path;
+    assert!(
+        sub_proposed.exists(),
+        "Subtitle should exist at proposed path: {:?}",
+        sub_proposed
+    );
+    assert!(!subtitle.exists(), "Source subtitle should no longer exist");
+
+    // Verify subtitle filename contains language code
+    let sub_filename = sub_proposed.file_name().unwrap().to_str().unwrap();
+    assert!(
+        sub_filename.contains(".en."),
+        "Subtitle filename should contain '.en.', got: {}",
+        sub_filename
+    );
+    assert!(
+        sub_filename.ends_with(".srt"),
+        "Subtitle should keep .srt extension, got: {}",
+        sub_filename
+    );
+}

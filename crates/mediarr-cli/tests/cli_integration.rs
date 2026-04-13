@@ -12,6 +12,52 @@ fn mediarr() -> Command {
     Command::cargo_bin("mediarr").expect("binary should be built")
 }
 
+/// Helper to create a Command with HOME set to a temp directory,
+/// with a config file that has output_dir set to the given path.
+fn mediarr_with_config(
+    fake_home: &std::path::Path,
+    output_dir: &std::path::Path,
+) -> Command {
+    // Write a valid config.toml to the fake HOME's config directory
+    let config_dir = fake_home.join("Library/Application Support/mediarr");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join("config.toml"),
+        format!(
+            r#"[general]
+output_dir = "{}"
+operation = "Move"
+conflict_strategy = "Skip"
+create_directories = true
+
+[templates]
+movie = "{{Title}} ({{year}})/{{Title}} ({{year}}).{{ext}}"
+series = "{{title}}/Season {{season:02}}/{{title}} - S{{season:02}}E{{episode:02}}.{{ext}}"
+
+[subtitles]
+enabled = true
+preferred_languages = ["en"]
+
+[subtitles.discovery]
+sidecar = true
+subs_subfolder = true
+nested_language_folders = true
+vobsub_pairs = true
+"#,
+            output_dir.display()
+        ),
+    )
+    .unwrap();
+
+    // Also create the data directory so history.db can be created
+    let data_dir = fake_home.join("Library/Application Support/mediarr");
+    std::fs::create_dir_all(&data_dir).unwrap();
+
+    let mut cmd = Command::cargo_bin("mediarr").expect("binary should be built");
+    cmd.env("HOME", fake_home);
+    cmd
+}
+
 // -----------------------------------------------------------------------
 // Test 1: no_args_shows_help
 // -----------------------------------------------------------------------
@@ -179,4 +225,73 @@ fn scan_tree_shows_detail() {
         .stdout(predicates::str::contains(
             "The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv",
         ));
+}
+
+// -----------------------------------------------------------------------
+// Test 10: rename_moves_files_to_output_dir
+// -----------------------------------------------------------------------
+
+#[test]
+fn rename_moves_files_to_output_dir() {
+    let source_dir = assert_fs::TempDir::new().unwrap();
+    let output_dir = assert_fs::TempDir::new().unwrap();
+    let fake_home = assert_fs::TempDir::new().unwrap();
+
+    // Create a video file with a recognizable series name
+    source_dir
+        .child("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv")
+        .write_binary(b"fake video data")
+        .unwrap();
+
+    // Run rename with --yes to auto-confirm
+    mediarr_with_config(fake_home.path(), output_dir.path())
+        .arg("rename")
+        .arg("--yes")
+        .arg(source_dir.path())
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("Renamed 1 files"));
+
+    // Verify source file is gone (Move operation)
+    assert!(
+        !source_dir
+            .path()
+            .join("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv")
+            .exists(),
+        "Source file should be moved"
+    );
+
+    // Verify a file appeared somewhere under output_dir by walking recursively
+    fn find_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut files = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    files.extend(find_files(&path));
+                } else {
+                    files.push(path);
+                }
+            }
+        }
+        files
+    }
+
+    let output_files = find_files(output_dir.path());
+    assert_eq!(
+        output_files.len(),
+        1,
+        "Should have exactly 1 file in output dir, found: {:?}",
+        output_files
+    );
+
+    let output_file = &output_files[0];
+    assert!(
+        output_file
+            .extension()
+            .map(|e| e == "mkv")
+            .unwrap_or(false),
+        "Output file should have .mkv extension: {:?}",
+        output_file
+    );
 }
