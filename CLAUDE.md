@@ -286,6 +286,20 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 <!-- GSD:profile-start -->
 ## Developer Profile
 
-> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
+> Generated from session analysis (73 messages, 21 projects) on 2026-03-22.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
+
+### Communication & Responses
+- **Terse-direct (HIGH):** Match the developer's style — deliver results, not conversation. No unnecessary clarifying questions. Act on the instruction given.
+- **Code-only explanations (HIGH):** Skip walkthroughs, rationale paragraphs, and step-by-step narratives. A brief one-liner about approach is acceptable; lengthy explanations are not.
+- **Fast decisions (HIGH):** Present a recommended option and proceed unless told otherwise. Do not present lengthy option comparisons.
+
+### Working Style
+- **Hypothesis-driven debugging (MEDIUM):** Focus on the specific area pointed to rather than broad investigation. This developer does their own diagnosis — provide targeted fixes.
+- **Self-directed learning (MEDIUM):** Answer specific questions directly and concisely. No unsolicited tutorials or background context.
+- **Backend-focused (HIGH):** Default to performance, reliability, cost, and operational concerns. When frontend decisions arise, ask for preferences.
+
+### Boundaries
+- **Scope-creep sensitive (LOW):** Stay tightly scoped to exactly what is asked. Do not add unrequested features, refactor adjacent code, or expand scope. Ask first.
+- **Opinionated on tooling (LOW):** Respect existing tool and technology choices. Suggest the developer's established stack first.
 <!-- GSD:profile-end -->

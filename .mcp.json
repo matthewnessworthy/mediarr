@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "gsd-workflow": {
-      "command": "/Users/matthew/.local/share/fnm/node-versions/v22.22.1/installation/bin/node",
+      "command": "/Users/matthew/.local/share/fnm/node-versions/v24.14.0/installation/bin/node",
       "args": [
-        "/Users/matthew/.local/share/fnm/node-versions/v22.22.1/installation/lib/node_modules/gsd-pi/packages/mcp-server/dist/cli.js"
+        "/Users/matthew/.local/share/fnm/node-versions/v24.14.0/installation/lib/node_modules/gsd-pi/packages/mcp-server/dist/cli.js"
       ],
       "cwd": "/Users/matthew/Sites/personal/mediarr",
       "env": {
