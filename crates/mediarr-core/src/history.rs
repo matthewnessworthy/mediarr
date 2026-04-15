@@ -243,11 +243,9 @@ impl HistoryDb {
         let media_info: MediaInfo =
             serde_json::from_str(&entry.media_info_json).unwrap_or_default();
 
-        let media_info_map: std::collections::HashMap<String, MediaInfo> = std::iter::once((
-            entry.source_path.to_string_lossy().to_string(),
-            media_info,
-        ))
-        .collect();
+        let media_info_map: std::collections::HashMap<String, MediaInfo> =
+            std::iter::once((entry.source_path.to_string_lossy().to_string(), media_info))
+                .collect();
 
         self.record_rename_results(&results, &media_info_map)?;
         Ok(())
@@ -453,7 +451,10 @@ impl HistoryDb {
             info!(batch_id, "undo complete, all entries removed from history");
         } else {
             let failed = results.iter().filter(|r| !r.success).count();
-            warn!(batch_id, failed, "partial undo — failed entries remain in history for retry");
+            warn!(
+                batch_id,
+                failed, "partial undo — failed entries remain in history for retry"
+            );
         }
 
         Ok(results)
@@ -1459,9 +1460,24 @@ mod tests {
 
         let batch_id = HistoryDb::generate_batch_id();
         let entries = vec![
-            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
-            make_record(&batch_id, Path::new("/src/b.mkv"), Path::new("/dst/b.mkv"), 2000),
-            make_record(&batch_id, Path::new("/src/c.mkv"), Path::new("/dst/c.mkv"), 3000),
+            make_record(
+                &batch_id,
+                Path::new("/src/a.mkv"),
+                Path::new("/dst/a.mkv"),
+                1000,
+            ),
+            make_record(
+                &batch_id,
+                Path::new("/src/b.mkv"),
+                Path::new("/dst/b.mkv"),
+                2000,
+            ),
+            make_record(
+                &batch_id,
+                Path::new("/src/c.mkv"),
+                Path::new("/dst/c.mkv"),
+                3000,
+            ),
         ];
         db.record_batch(&entries).unwrap();
 
@@ -1481,9 +1497,12 @@ mod tests {
         let db = HistoryDb::open(&dir.path().join("test.db")).unwrap();
 
         let batch_id = HistoryDb::generate_batch_id();
-        let entries = vec![
-            make_record(&batch_id, Path::new("/src/a.mkv"), Path::new("/dst/a.mkv"), 1000),
-        ];
+        let entries = vec![make_record(
+            &batch_id,
+            Path::new("/src/a.mkv"),
+            Path::new("/dst/a.mkv"),
+            1000,
+        )];
         db.record_batch(&entries).unwrap();
 
         let first = db.clear_history().unwrap();

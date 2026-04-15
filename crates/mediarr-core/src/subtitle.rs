@@ -99,7 +99,12 @@ impl SubtitleDiscovery {
     }
 
     /// Enrich a raw subtitle with language, type, and proposed path.
-    fn enrich(&self, raw: RawSubtitle, video_proposed_stem: &str, video_output_dir: &Path) -> SubtitleMatch {
+    fn enrich(
+        &self,
+        raw: RawSubtitle,
+        video_proposed_stem: &str,
+        video_output_dir: &Path,
+    ) -> SubtitleMatch {
         let filename = raw
             .source_path
             .file_name()
@@ -568,7 +573,8 @@ mod tests {
         touch(&dir.path().join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let sidecar: Vec<_> = results
             .iter()
@@ -614,7 +620,8 @@ mod tests {
         touch(&subs_dir.join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let subfolder: Vec<_> = results
             .iter()
@@ -636,7 +643,8 @@ mod tests {
         touch(&sub_dir.join("Movie.en.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let subfolder: Vec<_> = results
             .iter()
@@ -660,7 +668,8 @@ mod tests {
         touch(&eng_dir.join("Movie.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let nested: Vec<_> = results
             .iter()
@@ -681,7 +690,8 @@ mod tests {
         touch(&en_dir.join("Movie.srt"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let nested: Vec<_> = results
             .iter()
@@ -703,7 +713,8 @@ mod tests {
         touch(&dir.path().join("Movie.sub"));
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let vobsub: Vec<_> = results
             .iter()
@@ -721,7 +732,8 @@ mod tests {
         // No .sub file
 
         let disc = discovery_all_enabled();
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let vobsub: Vec<_> = results
             .iter()
@@ -747,7 +759,8 @@ mod tests {
             vobsub_pairs: true,
         };
         let disc = SubtitleDiscovery::new(toggles, vec!["en".into()]);
-        let results = disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
+        let results =
+            disc.discover_for_video(&dir.path().join("Movie.mkv"), "Movie", Path::new(""));
 
         let sidecar: Vec<_> = results
             .iter()
@@ -850,7 +863,13 @@ mod tests {
 
     #[test]
     fn path_with_type() {
-        let path = generate_proposed_path(Path::new(""), "Movie", "en", Some(&SubtitleType::Forced), "srt");
+        let path = generate_proposed_path(
+            Path::new(""),
+            "Movie",
+            "en",
+            Some(&SubtitleType::Forced),
+            "srt",
+        );
         assert_eq!(path, PathBuf::from("Movie.en.forced.srt"));
     }
 
@@ -977,7 +996,13 @@ mod tests {
 
     #[test]
     fn path_with_commentary_type() {
-        let path = generate_proposed_path(Path::new(""), "Movie", "en", Some(&SubtitleType::Commentary), "srt");
+        let path = generate_proposed_path(
+            Path::new(""),
+            "Movie",
+            "en",
+            Some(&SubtitleType::Commentary),
+            "srt",
+        );
         assert_eq!(path, PathBuf::from("Movie.en.commentary.srt"));
     }
 
@@ -1065,7 +1090,10 @@ mod tests {
     fn path_includes_video_output_dir() {
         let output_dir = Path::new("Movies/Title (2024)");
         let path = generate_proposed_path(output_dir, "Title (2024)", "en", None, "srt");
-        assert_eq!(path, PathBuf::from("Movies/Title (2024)/Title (2024).en.srt"));
+        assert_eq!(
+            path,
+            PathBuf::from("Movies/Title (2024)/Title (2024).en.srt")
+        );
         assert_eq!(path.parent().unwrap(), output_dir);
     }
 
@@ -1078,7 +1106,13 @@ mod tests {
     #[test]
     fn path_with_output_dir_and_type() {
         let output_dir = Path::new("output/TV");
-        let path = generate_proposed_path(output_dir, "Show S01E01", "en", Some(&SubtitleType::Forced), "srt");
+        let path = generate_proposed_path(
+            output_dir,
+            "Show S01E01",
+            "en",
+            Some(&SubtitleType::Forced),
+            "srt",
+        );
         assert_eq!(path, PathBuf::from("output/TV/Show S01E01.en.forced.srt"));
     }
 
@@ -1098,7 +1132,8 @@ mod tests {
 
         let disc = discovery_all_enabled();
         let output_dir = Path::new("Movies/Movie (2024)");
-        let results = disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie (2024)", output_dir);
+        let results =
+            disc.discover_for_video(&media_dir.join("Movie.mkv"), "Movie (2024)", output_dir);
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].proposed_path.parent().unwrap(), output_dir);

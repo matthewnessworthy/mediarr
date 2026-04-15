@@ -288,7 +288,6 @@ mod tests {
         assert!(config.subtitles.preferred_languages.is_empty());
     }
 
-
     // -- TOML round-trip --
 
     #[test]

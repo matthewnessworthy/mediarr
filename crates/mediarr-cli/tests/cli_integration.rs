@@ -14,10 +14,7 @@ fn mediarr() -> Command {
 
 /// Helper to create a Command with HOME set to a temp directory,
 /// with a config file that has output_dir set to the given path.
-fn mediarr_with_config(
-    fake_home: &std::path::Path,
-    output_dir: &std::path::Path,
-) -> Command {
+fn mediarr_with_config(fake_home: &std::path::Path, output_dir: &std::path::Path) -> Command {
     // Write a valid config.toml to the fake HOME's config directory
     let config_dir = fake_home.join("Library/Application Support/mediarr");
     std::fs::create_dir_all(&config_dir).unwrap();
@@ -287,10 +284,7 @@ fn rename_moves_files_to_output_dir() {
 
     let output_file = &output_files[0];
     assert!(
-        output_file
-            .extension()
-            .map(|e| e == "mkv")
-            .unwrap_or(false),
+        output_file.extension().map(|e| e == "mkv").unwrap_or(false),
         "Output file should have .mkv extension: {:?}",
         output_file
     );

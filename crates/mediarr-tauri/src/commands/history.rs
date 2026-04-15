@@ -42,7 +42,10 @@ pub fn check_undo(db: State<'_, ManagedDb>, batch_id: String) -> CommandResult<U
 
 /// Execute an undo operation, reversing all renames in a batch.
 #[tauri::command]
-pub fn execute_undo(db: State<'_, ManagedDb>, batch_id: String) -> CommandResult<Vec<RenameResult>> {
+pub fn execute_undo(
+    db: State<'_, ManagedDb>,
+    batch_id: String,
+) -> CommandResult<Vec<RenameResult>> {
     let db = db.lock().map_err(|_| CommandError::StateLock)?;
     let results = db.execute_undo(&batch_id)?;
     Ok(results)

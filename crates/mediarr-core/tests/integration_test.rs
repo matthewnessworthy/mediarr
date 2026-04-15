@@ -324,7 +324,10 @@ fn test_subtitle_discover_plan_rename_pipeline() {
 
     // Scan with subtitles enabled (default)
     let config = config_with_output(output_dir.path());
-    assert!(config.subtitles.enabled, "subtitles should be enabled by default");
+    assert!(
+        config.subtitles.enabled,
+        "subtitles should be enabled by default"
+    );
 
     let scanner = Scanner::new(config.clone());
     let results = scanner.scan_folder(source_dir.path()).unwrap();

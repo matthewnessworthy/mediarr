@@ -415,14 +415,16 @@ impl WatcherManager {
                         })
                         .collect();
 
-                    let batch_id =
-                        match self.history.record_rename_results(&results, &media_info_map) {
-                            Ok(id) => Some(id).filter(|s| !s.is_empty()),
-                            Err(e) => {
-                                warn!(error = %e, "failed to record rename batch in history");
-                                None
-                            }
-                        };
+                    let batch_id = match self
+                        .history
+                        .record_rename_results(&results, &media_info_map)
+                    {
+                        Ok(id) => Some(id).filter(|s| !s.is_empty()),
+                        Err(e) => {
+                            warn!(error = %e, "failed to record rename batch in history");
+                            None
+                        }
+                    };
 
                     // Log watcher event
                     let event = WatcherEvent {
@@ -838,7 +840,11 @@ mod tests {
         let init_result = init_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("watcher init signal should arrive");
-        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
+        assert!(
+            init_result.is_ok(),
+            "watcher init failed: {:?}",
+            init_result
+        );
 
         // Create a video file in the watched directory
         let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
@@ -922,7 +928,11 @@ mod tests {
         let init_result = init_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("watcher init signal should arrive");
-        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
+        assert!(
+            init_result.is_ok(),
+            "watcher init failed: {:?}",
+            init_result
+        );
 
         // Create a video file OUTSIDE the watched directory, then move it in.
         // This triggers a rename event (RenameMode::Any on macOS) rather than
@@ -1012,7 +1022,11 @@ mod tests {
         let init_result = init_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("watcher init signal should arrive");
-        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
+        assert!(
+            init_result.is_ok(),
+            "watcher init failed: {:?}",
+            init_result
+        );
 
         // Create a video file in the watched directory
         let video = watch_path.join("Inception.2010.1080p.BluRay.x264-GROUP.mkv");
@@ -1094,7 +1108,11 @@ mod tests {
         let init_result = init_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("watcher init signal should arrive");
-        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
+        assert!(
+            init_result.is_ok(),
+            "watcher init failed: {:?}",
+            init_result
+        );
 
         // Rapidly create 5 video files within the debounce window
         for i in 1..=5 {
@@ -1254,7 +1272,11 @@ mod tests {
         let init_result = init_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("watcher init signal should arrive");
-        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
+        assert!(
+            init_result.is_ok(),
+            "watcher init failed: {:?}",
+            init_result
+        );
 
         // Create a video file
         let video = watch_path.join("The.Office.S02E03.720p.mkv");
@@ -1336,7 +1358,11 @@ mod tests {
         let init_result = init_rx
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("watcher init signal should arrive");
-        assert!(init_result.is_ok(), "watcher init failed: {:?}", init_result);
+        assert!(
+            init_result.is_ok(),
+            "watcher init failed: {:?}",
+            init_result
+        );
 
         // Create non-video files only
         fs::write(watch_path.join("readme.txt"), b"text").unwrap();
@@ -1601,9 +1627,7 @@ mod tests {
         let mut watcher = WatcherManager::new(config, history);
 
         // Create a video file
-        let video = source
-            .path()
-            .join("Test.Movie.2020.720p.WEB.x264.mkv");
+        let video = source.path().join("Test.Movie.2020.720p.WEB.x264.mkv");
         fs::write(&video, b"video data").unwrap();
 
         let canonical = video.canonicalize().unwrap();

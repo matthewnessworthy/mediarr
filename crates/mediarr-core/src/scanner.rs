@@ -215,7 +215,9 @@ impl Scanner {
                     .unwrap_or("");
                 let video_output_dir = proposed_path.parent().unwrap_or(Path::new(""));
                 let subtitles = match &subtitle_discovery {
-                    Some(disc) => disc.discover_for_video(video_path, proposed_stem, video_output_dir),
+                    Some(disc) => {
+                        disc.discover_for_video(video_path, proposed_stem, video_output_dir)
+                    }
                     None => vec![],
                 };
 

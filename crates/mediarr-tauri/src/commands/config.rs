@@ -20,7 +20,9 @@ pub fn update_config(
     managed_config: State<'_, ManagedConfig>,
     config: Config,
 ) -> CommandResult<()> {
-    let mut current = managed_config.write().map_err(|_| CommandError::StateLock)?;
+    let mut current = managed_config
+        .write()
+        .map_err(|_| CommandError::StateLock)?;
     let config_path = config::default_config_path()?;
     config.save(&config_path)?;
     *current = config;

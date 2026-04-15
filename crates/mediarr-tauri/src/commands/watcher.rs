@@ -84,7 +84,9 @@ pub fn start_watcher(
             .iter()
             .find(|w| w.path.to_string_lossy() == path)
             .cloned()
-            .ok_or_else(|| CommandError::Other(format!("no watcher configured for path: {path}")))?;
+            .ok_or_else(|| {
+                CommandError::Other(format!("no watcher configured for path: {path}"))
+            })?;
         let resolved = wc.resolve_config(&config);
         (wc, resolved)
     };

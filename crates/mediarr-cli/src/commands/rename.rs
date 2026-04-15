@@ -5,9 +5,7 @@
 
 use std::io::{self, BufRead, Write};
 
-use mediarr_core::{
-    Config, HistoryDb, RenamePlan, RenamePlanEntry, Renamer, ScanStatus, Scanner,
-};
+use mediarr_core::{Config, HistoryDb, RenamePlan, RenamePlanEntry, Renamer, ScanStatus, Scanner};
 
 use crate::output::OutputFormatter;
 use crate::RenameArgs;
