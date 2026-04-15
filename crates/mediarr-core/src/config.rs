@@ -102,20 +102,27 @@ impl Default for SubtitleConfig {
 
 /// Returns the platform-appropriate path for the Mediarr config file.
 ///
-/// Uses `dirs::config_dir()` to find the platform config directory, then
-/// appends `mediarr/config.toml`. Returns `MediError::ConfigPathUnavailable`
-/// if the platform directory cannot be determined (never falls back to `.`).
+/// Checks `MEDIARR_CONFIG_DIR` env var first, then falls back to
+/// `dirs::config_dir()`. Appends `mediarr/config.toml` (the `mediarr`
+/// subdirectory is skipped when `MEDIARR_CONFIG_DIR` is set, since the
+/// caller is already pointing at a mediarr-specific directory).
 pub fn default_config_path() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("MEDIARR_CONFIG_DIR") {
+        return Ok(PathBuf::from(dir).join("config.toml"));
+    }
     let base = dirs::config_dir().ok_or(MediError::ConfigPathUnavailable)?;
     Ok(base.join("mediarr").join("config.toml"))
 }
 
 /// Returns the platform-appropriate path for the Mediarr history database.
 ///
-/// Uses `dirs::data_dir()` to find the platform data directory, then
-/// appends `mediarr/history.db`. Returns `MediError::ConfigPathUnavailable`
-/// if the platform directory cannot be determined (never falls back to `.`).
+/// Checks `MEDIARR_DATA_DIR` env var first, then falls back to
+/// `dirs::data_dir()`. Appends `mediarr/history.db` (the `mediarr`
+/// subdirectory is skipped when `MEDIARR_DATA_DIR` is set).
 pub fn default_data_path() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("MEDIARR_DATA_DIR") {
+        return Ok(PathBuf::from(dir).join("history.db"));
+    }
     let base = dirs::data_dir().ok_or(MediError::ConfigPathUnavailable)?;
     Ok(base.join("mediarr").join("history.db"))
 }
