@@ -65,7 +65,7 @@ subs_subfolder = true
 nested_language_folders = true
 vobsub_pairs = true
 "#,
-            output_dir.display()
+            output_dir.display().to_string().replace('\\', "/")
         ),
     )
     .unwrap();
