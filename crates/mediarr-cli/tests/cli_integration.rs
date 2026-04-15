@@ -5,7 +5,6 @@
 
 use assert_cmd::Command;
 use assert_fs::prelude::*;
-use predicates::prelude::*;
 
 /// Helper to get a Command for the mediarr binary.
 fn mediarr() -> Command {
@@ -14,10 +13,35 @@ fn mediarr() -> Command {
 
 /// Helper to create a Command with HOME set to a temp directory,
 /// with a config file that has output_dir set to the given path.
+///
+/// Uses platform-appropriate config/data paths so this works on macOS, Linux, and Windows CI.
 fn mediarr_with_config(fake_home: &std::path::Path, output_dir: &std::path::Path) -> Command {
-    // Write a valid config.toml to the fake HOME's config directory
-    let config_dir = fake_home.join("Library/Application Support/mediarr");
+    // Determine platform-appropriate config and data directories.
+    // On macOS: $HOME/Library/Application Support/mediarr
+    // On Linux: $XDG_CONFIG_HOME/mediarr (we set XDG vars to force the path)
+    // On Windows: $APPDATA/mediarr
+    let config_dir;
+    let data_dir;
+
+    #[cfg(target_os = "macos")]
+    {
+        config_dir = fake_home.join("Library/Application Support/mediarr");
+        data_dir = fake_home.join("Library/Application Support/mediarr");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        config_dir = fake_home.join(".config/mediarr");
+        data_dir = fake_home.join(".local/share/mediarr");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        config_dir = fake_home.join("AppData/Roaming/mediarr");
+        data_dir = fake_home.join("AppData/Local/mediarr");
+    }
+
     std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&data_dir).unwrap();
+
     std::fs::write(
         config_dir.join("config.toml"),
         format!(
@@ -46,12 +70,19 @@ vobsub_pairs = true
     )
     .unwrap();
 
-    // Also create the data directory so history.db can be created
-    let data_dir = fake_home.join("Library/Application Support/mediarr");
-    std::fs::create_dir_all(&data_dir).unwrap();
-
     let mut cmd = Command::cargo_bin("mediarr").expect("binary should be built");
     cmd.env("HOME", fake_home);
+    // On Linux, dirs uses XDG vars; on Windows, APPDATA/LOCALAPPDATA
+    #[cfg(target_os = "linux")]
+    {
+        cmd.env("XDG_CONFIG_HOME", fake_home.join(".config"));
+        cmd.env("XDG_DATA_HOME", fake_home.join(".local/share"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        cmd.env("APPDATA", fake_home.join("AppData/Roaming"));
+        cmd.env("LOCALAPPDATA", fake_home.join("AppData/Local"));
+    }
     cmd
 }
 
