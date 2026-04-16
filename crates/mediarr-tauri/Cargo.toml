@@ -1,6 +1,6 @@
 [package]
 name = "mediarr-tauri"
-version = "0.1.7"
+version = "0.1.10"
 edition = "2021"
 description = "Tauri desktop shell for Mediarr"
 license = "GPL-3.0-only"

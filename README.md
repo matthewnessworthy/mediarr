@@ -32,7 +32,7 @@ Pre-built binaries are available on the [Releases](https://github.com/matthewnes
 
 | Platform | File |
 |----------|------|
-| macOS | `mediarr-cli-macos-amd64` |
+| macOS | `mediarr-cli-macos-arm64` |
 | Linux | `mediarr-cli-linux-amd64` |
 | Windows | `mediarr-cli-windows-amd64.exe` |
 
@@ -202,6 +202,45 @@ cargo test --workspace
 cargo tauri build          # GUI
 cargo build --release -p mediarr-cli  # CLI only
 ```
+
+## Releasing
+
+Releases are automated via GitHub Actions but require version numbers to be bumped **before** tagging.
+
+### Steps
+
+1. **Bump versions** in all five files (they must match):
+   - `crates/mediarr-core/Cargo.toml`
+   - `crates/mediarr-cli/Cargo.toml`
+   - `crates/mediarr-tauri/Cargo.toml`
+   - `crates/mediarr-tauri/tauri.conf.json`
+   - `frontend/package.json`
+
+2. **Run `cargo check`** to update `Cargo.lock`.
+
+3. **Commit** the version bump:
+   ```bash
+   git add -A && git commit -m "chore: bump version to 0.x.y"
+   ```
+
+4. **Tag and push**:
+   ```bash
+   git tag v0.x.y
+   git push origin main --tags
+   ```
+
+5. **Wait for CI.** The `Release` workflow will:
+   - Build Tauri desktop apps (macOS, Linux, Windows) and create/update the GitHub Release with all assets
+   - Build CLI binaries and attach them to the release
+   - Dispatch to the Homebrew tap to update the cask with the new DMG URL and SHA
+
+### Why version bumping matters
+
+The `tauri-action` uses the version from `tauri.conf.json` to find/create the GitHub Release (`tagName: v__VERSION__`). If `tauri.conf.json` says `0.1.7` but you tag `v0.1.10`, the Tauri action will attach assets to the `v0.1.7` release instead, and the `v0.1.10` release will have no desktop installers. The Homebrew tap update will then be skipped because it requires a `.dmg` asset on the release.
+
+### Do NOT manually create releases
+
+The `tauri-action` creates the GitHub Release automatically. Creating one manually with `gh release create` before the workflow runs will cause the Tauri action to either fail or create a duplicate. Let the workflow handle it.
 
 ## License
 
