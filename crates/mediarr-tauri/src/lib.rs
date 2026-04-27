@@ -172,23 +172,24 @@ pub(crate) fn spawn_watcher_thread(
 
 /// Auto-start all watchers that have `active: true` in the config.
 ///
-/// Called during Tauri setup. Each watcher is spawned on a dedicated OS thread
-/// with its own single-threaded tokio runtime via [`spawn_watcher_thread`].
-/// Errors for individual watchers are logged but do not prevent other watchers
-/// from starting.
+/// Called during Tauri setup. Per-watcher failures are logged and do not
+/// prevent other watchers from starting; only setup-level failures (lock
+/// poisoning, missing data path) abort the whole pass.
 fn auto_start_watchers(app: &tauri::AppHandle) {
-    use tauri::{Emitter, Manager};
+    if let Err(e) = auto_start_watchers_impl(app) {
+        error!("auto-start watchers aborted: {e}");
+    }
+}
+
+fn auto_start_watchers_impl(app: &tauri::AppHandle) -> std::result::Result<(), String> {
+    use tauri::Manager;
 
     let config_state: tauri::State<'_, state::ManagedConfig> = app.state();
     let watchers_state: tauri::State<'_, state::ManagedWatchers> = app.state();
 
-    let config = match config_state.read() {
-        Ok(c) => c,
-        Err(_) => {
-            error!("failed to read config for auto-start watchers");
-            return;
-        }
-    };
+    let config = config_state
+        .read()
+        .map_err(|_| "failed to read config".to_string())?;
 
     let active_configs: Vec<_> = config
         .watchers
@@ -198,7 +199,7 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
         .collect();
 
     if active_configs.is_empty() {
-        return;
+        return Ok(());
     }
 
     info!(
@@ -206,21 +207,12 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
         "auto-starting active watchers from config"
     );
 
-    let data_path = match config::default_data_path() {
-        Ok(p) => p,
-        Err(e) => {
-            error!("failed to determine data path for auto-start: {e}");
-            return;
-        }
-    };
+    let data_path =
+        config::default_data_path().map_err(|e| format!("failed to determine data path: {e}"))?;
 
-    let mut watchers = match watchers_state.lock() {
-        Ok(w) => w,
-        Err(_) => {
-            error!("failed to lock watchers for auto-start");
-            return;
-        }
-    };
+    let mut watchers = watchers_state
+        .lock()
+        .map_err(|_| "failed to lock watchers map".to_string())?;
 
     for wc in active_configs {
         let path_str = wc.path.to_string_lossy().to_string();
@@ -229,41 +221,51 @@ fn auto_start_watchers(app: &tauri::AppHandle) {
             continue;
         }
 
-        let resolved_config = wc.resolve_config(&config);
-
-        let app_handle = app.clone();
-        let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
-            Box::new(move |event: &mediarr_core::WatcherEvent| {
-                let _ = app_handle.emit("watcher-event", event);
-            });
-
-        let (handle, init_rx) = match spawn_watcher_thread(
-            resolved_config,
-            data_path.clone(),
-            wc.path.clone(),
-            wc.mode,
-            wc.debounce_seconds,
-            on_event_callback,
-        ) {
-            Ok(pair) => pair,
-            Err(e) => {
-                warn!(path = %path_str, "failed to spawn auto-start watcher: {e}");
-                continue;
-            }
-        };
-
-        match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok(Ok(())) => {
+        match start_one_watcher(app, &wc, &config, &data_path) {
+            Ok(handle) => {
                 info!(path = %path_str, "auto-started watcher successfully");
                 watchers.insert(path_str, handle);
             }
-            Ok(Err(msg)) => {
-                warn!(path = %path_str, "auto-start watcher failed: {msg}");
-            }
             Err(e) => {
-                warn!(path = %path_str, "auto-start watcher timed out: {e}");
+                warn!(path = %path_str, "auto-start watcher failed: {e}");
             }
         }
+    }
+
+    Ok(())
+}
+
+/// Spawn one watcher and wait for it to confirm initialization. Returns the
+/// handle on success, an error message otherwise.
+fn start_one_watcher(
+    app: &tauri::AppHandle,
+    wc: &mediarr_core::WatcherConfig,
+    global: &Config,
+    data_path: &std::path::Path,
+) -> std::result::Result<state::WatcherHandle, String> {
+    use tauri::Emitter;
+
+    let resolved_config = wc.resolve_config(global);
+
+    let app_handle = app.clone();
+    let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
+        Box::new(move |event: &mediarr_core::WatcherEvent| {
+            let _ = app_handle.emit("watcher-event", event);
+        });
+
+    let (handle, init_rx) = spawn_watcher_thread(
+        resolved_config,
+        data_path.to_path_buf(),
+        wc.path.clone(),
+        wc.mode,
+        wc.debounce_seconds,
+        on_event_callback,
+    )?;
+
+    match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(())) => Ok(handle),
+        Ok(Err(msg)) => Err(msg),
+        Err(e) => Err(format!("init timed out: {e}")),
     }
 }
 
