@@ -19,23 +19,50 @@ use crate::template::TemplateEngine;
 use crate::types::{FolderContext, MediaType, ParseConfidence, ScanFilter, ScanResult, ScanStatus};
 
 /// Build the proposed path for in-place mode, avoiding re-nesting when the
-/// source file is already inside a directory that matches the template's
-/// top-level folder component.
+/// source file is already inside a directory that represents the same media as
+/// the template's top-level folder component.
 ///
-/// For example, if the source is `Hostage (2020)/Hostage.mkv` and the template
-/// renders to `Hostage (2020)/Hostage (2020).mkv`, the result should be
-/// `Hostage (2020)/Hostage (2020).mkv` — not `Hostage (2020)/Hostage (2020)/Hostage (2020).mkv`.
-fn in_place_proposed_path(source: &Path, template_relative: &Path) -> PathBuf {
+/// Two equivalence checks are performed against the source's immediate parent
+/// directory name, in order:
+///
+/// 1. **Raw-string match** — the parent directory name equals the template's
+///    first path component verbatim (e.g. source `Hostage (2020)/Hostage.mkv`
+///    + template `Hostage (2020)/Hostage (2020).mkv`).
+/// 2. **Metadata match** — the parent directory name parses (via hunch) to the
+///    same media as `info`: case-insensitive title match AND year match (or
+///    `info.year` is `None`). This covers messy release folders such as
+///    `They Will Kill You (2026) [1080p] [WEBRip] [5.1] [YTS.BZ]` which name
+///    the same movie as the rendered clean folder `They Will Kill You (2026)`.
+///
+/// If either check matches, the source's grandparent is used as the join base
+/// (so the messy parent is replaced by the clean template folder). Otherwise,
+/// the template path is joined to the source's parent directory as before.
+fn in_place_proposed_path(
+    source: &Path,
+    template_relative: &Path,
+    info: &crate::types::MediaInfo,
+) -> PathBuf {
     let source_parent = source.parent().unwrap_or_else(|| Path::new(""));
 
-    // If the template has a directory component, check if it matches the source's parent
     if let Some(template_first_component) = template_relative.components().next() {
         let template_dir = template_first_component.as_os_str();
         if let Some(source_dir_name) = source_parent.file_name() {
+            // Check 1: raw equality (preserves prior behavior for already-clean folders).
             if template_dir == source_dir_name {
-                // Source is already in the right folder — use grandparent + full template path
                 let grandparent = source_parent.parent().unwrap_or_else(|| Path::new(""));
                 return grandparent.join(template_relative);
+            }
+            // Check 2: parsed metadata equivalence (covers messy release folders).
+            if let Some(name_str) = source_dir_name.to_str() {
+                if let Ok(parent_info) = parser::parse_filename(name_str) {
+                    let title_match = !parent_info.title.is_empty()
+                        && parent_info.title.eq_ignore_ascii_case(&info.title);
+                    let year_match = info.year.is_none() || info.year == parent_info.year;
+                    if title_match && year_match {
+                        let grandparent = source_parent.parent().unwrap_or_else(|| Path::new(""));
+                        return grandparent.join(template_relative);
+                    }
+                }
             }
         }
     }
@@ -156,8 +183,18 @@ impl Scanner {
 
                 debug!(filename, dir = %dir.display(), "parsing video file");
 
+                // Build per-file sibling list excluding the file itself.
+                // Including the current file in its own siblings makes hunch's
+                // cross-file invariance treat shared tokens (e.g. the year) as
+                // part of the title — corrupting parses for single-file dirs.
+                let other_siblings: Vec<&str> = sibling_refs
+                    .iter()
+                    .copied()
+                    .filter(|&s| s != filename)
+                    .collect();
+
                 // Parse with sibling context (filename only, not relative path)
-                let file_info = match parser::parse_with_context(filename, &sibling_refs) {
+                let file_info = match parser::parse_with_context(filename, &other_siblings) {
                     Ok(info) => info,
                     Err(e) => {
                         debug!(filename, error = %e, "parse failed, adding as Error");
@@ -205,7 +242,7 @@ impl Scanner {
                     output_dir.join(&relative_path)
                 } else {
                     // In-place: avoid re-nesting when already in correct folder
-                    in_place_proposed_path(video_path, &relative_path)
+                    in_place_proposed_path(video_path, &relative_path, &media_info)
                 };
 
                 // Discover subtitles
@@ -320,7 +357,7 @@ impl Scanner {
             output_dir.join(&relative_path)
         } else {
             // In-place: avoid re-nesting when already in correct folder
-            in_place_proposed_path(path, &relative_path)
+            in_place_proposed_path(path, &relative_path, &media_info)
         };
 
         // Discover subtitles
