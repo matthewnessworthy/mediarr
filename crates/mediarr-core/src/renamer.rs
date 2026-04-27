@@ -77,72 +77,38 @@ impl Renamer {
         let mut seen_dests: HashSet<PathBuf> = HashSet::new();
 
         for entry in &plan.entries {
-            let conflict = entry.dest_path.exists() || seen_dests.contains(&entry.dest_path);
-
-            if conflict {
-                match self.conflict_strategy {
-                    ConflictStrategy::Skip => {
-                        debug!(
-                            source = %entry.source_path.display(),
-                            dest = %entry.dest_path.display(),
-                            "dry_run: skipping conflict"
-                        );
-                        results.push(RenameResult {
-                            source_path: entry.source_path.clone(),
-                            dest_path: entry.dest_path.clone(),
-                            success: false,
-                            error: Some("skipped: target already exists".into()),
-                        });
-                    }
-                    ConflictStrategy::Overwrite => {
-                        debug!(
-                            source = %entry.source_path.display(),
-                            dest = %entry.dest_path.display(),
-                            "dry_run: would overwrite"
-                        );
-                        seen_dests.insert(entry.dest_path.clone());
-                        results.push(RenameResult {
-                            source_path: entry.source_path.clone(),
-                            dest_path: entry.dest_path.clone(),
-                            success: true,
-                            error: None,
-                        });
-                    }
-                    ConflictStrategy::NumericSuffix => {
-                        match resolve_numeric_suffix(&entry.dest_path, &seen_dests) {
-                            Ok(suffixed) => {
-                                debug!(
-                                    source = %entry.source_path.display(),
-                                    dest = %suffixed.display(),
-                                    "dry_run: would use numeric suffix"
-                                );
-                                seen_dests.insert(suffixed.clone());
-                                results.push(RenameResult {
-                                    source_path: entry.source_path.clone(),
-                                    dest_path: suffixed,
-                                    success: true,
-                                    error: None,
-                                });
-                            }
-                            Err(e) => {
-                                results.push(RenameResult {
-                                    source_path: entry.source_path.clone(),
-                                    dest_path: entry.dest_path.clone(),
-                                    success: false,
-                                    error: Some(e.to_string()),
-                                });
-                            }
-                        }
-                    }
+            match resolve_conflict(self.conflict_strategy, entry, &seen_dests) {
+                ConflictResolution::Skip { error } => {
+                    debug!(
+                        source = %entry.source_path.display(),
+                        dest = %entry.dest_path.display(),
+                        "dry_run: {error}"
+                    );
+                    results.push(RenameResult {
+                        source_path: entry.source_path.clone(),
+                        dest_path: entry.dest_path.clone(),
+                        success: false,
+                        error: Some(error),
+                    });
                 }
-            } else {
-                seen_dests.insert(entry.dest_path.clone());
-                results.push(RenameResult {
-                    source_path: entry.source_path.clone(),
-                    dest_path: entry.dest_path.clone(),
-                    success: true,
-                    error: None,
-                });
+                ConflictResolution::Proceed {
+                    effective_dest,
+                    overwrite,
+                } => {
+                    debug!(
+                        source = %entry.source_path.display(),
+                        dest = %effective_dest.display(),
+                        overwrite,
+                        "dry_run: would proceed"
+                    );
+                    seen_dests.insert(effective_dest.clone());
+                    results.push(RenameResult {
+                        source_path: entry.source_path.clone(),
+                        dest_path: effective_dest,
+                        success: true,
+                        error: None,
+                    });
+                }
             }
         }
 
@@ -160,73 +126,50 @@ impl Renamer {
         let mut seen_dests: HashSet<PathBuf> = HashSet::new();
 
         for entry in &plan.entries {
-            // Determine effective destination (may change due to conflict resolution)
-            let effective_dest =
-                if entry.dest_path.exists() || seen_dests.contains(&entry.dest_path) {
-                    match self.conflict_strategy {
-                        ConflictStrategy::Skip => {
-                            info!(
-                                source = %entry.source_path.display(),
-                                dest = %entry.dest_path.display(),
-                                "skipping: target already exists"
-                            );
-                            results.push(RenameResult {
-                                source_path: entry.source_path.clone(),
-                                dest_path: entry.dest_path.clone(),
-                                success: false,
-                                error: Some("skipped: target already exists".into()),
-                            });
-                            continue;
-                        }
-                        ConflictStrategy::Overwrite => {
-                            debug!(
-                                dest = %entry.dest_path.display(),
-                                "overwriting existing target"
-                            );
-                            // Remove existing file before move/copy (only if it exists on disk)
-                            if entry.dest_path.exists() {
-                                if let Err(e) = std::fs::remove_file(&entry.dest_path) {
-                                    warn!(
-                                        dest = %entry.dest_path.display(),
-                                        error = %e,
-                                        "failed to remove existing target for overwrite"
-                                    );
-                                    results.push(RenameResult {
-                                        source_path: entry.source_path.clone(),
-                                        dest_path: entry.dest_path.clone(),
-                                        success: false,
-                                        error: Some(format!("overwrite failed: {e}")),
-                                    });
-                                    break;
-                                }
-                            }
-                            entry.dest_path.clone()
-                        }
-                        ConflictStrategy::NumericSuffix => {
-                            match resolve_numeric_suffix(&entry.dest_path, &seen_dests) {
-                                Ok(suffixed) => {
-                                    debug!(
-                                        original = %entry.dest_path.display(),
-                                        suffixed = %suffixed.display(),
-                                        "using numeric suffix to avoid conflict"
-                                    );
-                                    suffixed
-                                }
-                                Err(e) => {
-                                    results.push(RenameResult {
-                                        source_path: entry.source_path.clone(),
-                                        dest_path: entry.dest_path.clone(),
-                                        success: false,
-                                        error: Some(e.to_string()),
-                                    });
-                                    continue;
-                                }
-                            }
-                        }
+            // Determine effective destination via shared conflict-resolution logic.
+            let (effective_dest, overwrite) =
+                match resolve_conflict(self.conflict_strategy, entry, &seen_dests) {
+                    ConflictResolution::Skip { error } => {
+                        info!(
+                            source = %entry.source_path.display(),
+                            dest = %entry.dest_path.display(),
+                            "{error}"
+                        );
+                        results.push(RenameResult {
+                            source_path: entry.source_path.clone(),
+                            dest_path: entry.dest_path.clone(),
+                            success: false,
+                            error: Some(error),
+                        });
+                        continue;
                     }
-                } else {
-                    entry.dest_path.clone()
+                    ConflictResolution::Proceed {
+                        effective_dest,
+                        overwrite,
+                    } => (effective_dest, overwrite),
                 };
+
+            // Overwrite strategy may need to remove the existing file before move/copy.
+            if overwrite && effective_dest.exists() {
+                debug!(
+                    dest = %effective_dest.display(),
+                    "overwriting existing target"
+                );
+                if let Err(e) = std::fs::remove_file(&effective_dest) {
+                    warn!(
+                        dest = %effective_dest.display(),
+                        error = %e,
+                        "failed to remove existing target for overwrite"
+                    );
+                    results.push(RenameResult {
+                        source_path: entry.source_path.clone(),
+                        dest_path: effective_dest,
+                        success: false,
+                        error: Some(format!("overwrite failed: {e}")),
+                    });
+                    break;
+                }
+            }
 
             // Create target directories if configured
             if self.create_directories {
@@ -283,44 +226,17 @@ impl Renamer {
                 RenameOperation::Copy => {
                     match std::fs::copy(&entry.source_path, &effective_dest) {
                         Ok(_) => {
-                            // Verify sizes match
-                            let src_size = match std::fs::metadata(&entry.source_path) {
-                                Ok(m) => m.len(),
-                                Err(e) => {
-                                    results.push(RenameResult {
-                                        source_path: entry.source_path.clone(),
-                                        dest_path: effective_dest,
-                                        success: false,
-                                        error: Some(format!("copy verify failed: {e}")),
-                                    });
-                                    break;
-                                }
-                            };
-                            let dest_size = match std::fs::metadata(&effective_dest) {
-                                Ok(m) => m.len(),
-                                Err(e) => {
-                                    results.push(RenameResult {
-                                        source_path: entry.source_path.clone(),
-                                        dest_path: effective_dest,
-                                        success: false,
-                                        error: Some(format!("copy verify failed: {e}")),
-                                    });
-                                    break;
-                                }
-                            };
-
-                            if src_size != dest_size {
-                                // Remove the bad copy
-                                let _ = std::fs::remove_file(&effective_dest);
+                            if let Err(error_msg) =
+                                verify_copy(&entry.source_path, &effective_dest)
+                            {
                                 results.push(RenameResult {
                                     source_path: entry.source_path.clone(),
                                     dest_path: effective_dest,
                                     success: false,
-                                    error: Some("copy verification failed: size mismatch".into()),
+                                    error: Some(error_msg),
                                 });
                                 break;
                             }
-
                             info!(
                                 source = %entry.source_path.display(),
                                 dest = %effective_dest.display(),
@@ -360,6 +276,81 @@ impl Renamer {
             "execute complete"
         );
         results
+    }
+}
+
+/// Verify a completed copy by comparing source and destination sizes.
+///
+/// Returns `Ok(())` on a clean copy. Returns an `Err(String)` describing the
+/// failure if either file's metadata is unreadable or the sizes differ. On
+/// size mismatch, the partial destination is removed (best-effort) so the
+/// caller does not have to clean up.
+fn verify_copy(src: &Path, dest: &Path) -> std::result::Result<(), String> {
+    let src_size = std::fs::metadata(src)
+        .map_err(|e| format!("copy verify failed: {e}"))?
+        .len();
+    let dest_size = std::fs::metadata(dest)
+        .map_err(|e| format!("copy verify failed: {e}"))?
+        .len();
+    if src_size != dest_size {
+        let _ = std::fs::remove_file(dest);
+        return Err("copy verification failed: size mismatch".into());
+    }
+    Ok(())
+}
+
+/// Outcome of conflict resolution for a single rename entry.
+///
+/// Centralizes the decision tree shared between `dry_run` and `execute` so
+/// the two paths can never silently diverge.
+enum ConflictResolution {
+    /// Proceed with the rename. `overwrite` indicates the target exists on
+    /// disk and must be removed before move/copy (only set under
+    /// `ConflictStrategy::Overwrite`).
+    Proceed {
+        effective_dest: PathBuf,
+        overwrite: bool,
+    },
+    /// Skip this entry; record the given error message in the result.
+    Skip { error: String },
+}
+
+/// Decide how to handle a potential conflict for one entry, given the
+/// configured strategy and the set of destinations already claimed in this
+/// batch.
+fn resolve_conflict(
+    strategy: ConflictStrategy,
+    entry: &RenamePlanEntry,
+    seen_dests: &HashSet<PathBuf>,
+) -> ConflictResolution {
+    let conflict = entry.dest_path.exists() || seen_dests.contains(&entry.dest_path);
+
+    if !conflict {
+        return ConflictResolution::Proceed {
+            effective_dest: entry.dest_path.clone(),
+            overwrite: false,
+        };
+    }
+
+    match strategy {
+        ConflictStrategy::Skip => ConflictResolution::Skip {
+            error: "skipped: target already exists".into(),
+        },
+        ConflictStrategy::Overwrite => ConflictResolution::Proceed {
+            effective_dest: entry.dest_path.clone(),
+            overwrite: true,
+        },
+        ConflictStrategy::NumericSuffix => {
+            match resolve_numeric_suffix(&entry.dest_path, seen_dests) {
+                Ok(suffixed) => ConflictResolution::Proceed {
+                    effective_dest: suffixed,
+                    overwrite: false,
+                },
+                Err(e) => ConflictResolution::Skip {
+                    error: e.to_string(),
+                },
+            }
+        }
     }
 }
 
