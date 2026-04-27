@@ -164,6 +164,40 @@ impl Config {
         info!(path = %path.display(), "config saved");
         Ok(())
     }
+
+    /// Find the watcher config for the given path, comparing as lossy UTF-8.
+    /// Returns `None` if no watcher matches.
+    pub fn find_watcher_by_path(&self, path: &str) -> Option<&WatcherConfig> {
+        self.watchers
+            .iter()
+            .find(|w| w.path.to_string_lossy() == path)
+    }
+
+    /// Find the watcher config for the given path and return a clone of it
+    /// alongside its fully resolved Config (per-watcher overrides merged
+    /// onto global). Returns `None` if no watcher matches.
+    pub fn resolve_watcher_by_path(&self, path: &str) -> Option<(WatcherConfig, Config)> {
+        self.find_watcher_by_path(path).cloned().map(|wc| {
+            let resolved = wc.resolve_config(self);
+            (wc, resolved)
+        })
+    }
+
+    /// Set the `active` flag on the watcher matching `path`. Returns `true`
+    /// if a watcher was found and updated, `false` otherwise.
+    pub fn set_watcher_active(&mut self, path: &str, active: bool) -> bool {
+        match self
+            .watchers
+            .iter_mut()
+            .find(|w| w.path.to_string_lossy() == path)
+        {
+            Some(wc) => {
+                wc.active = active;
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -852,5 +886,63 @@ vobsub_pairs = true
             MediError::Io(_) => {} // expected
             other => panic!("expected Io error, got: {other:?}"),
         }
+    }
+
+    // -- Watcher lookup / mutation helpers --
+
+    fn config_with_watcher(path: &str, active: bool) -> Config {
+        Config {
+            watchers: vec![WatcherConfig {
+                path: PathBuf::from(path),
+                active,
+                ..WatcherConfig::default()
+            }],
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn find_watcher_by_path_returns_match() {
+        let config = config_with_watcher("/media/tv", false);
+        let found = config.find_watcher_by_path("/media/tv");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().path, PathBuf::from("/media/tv"));
+    }
+
+    #[test]
+    fn find_watcher_by_path_returns_none_when_missing() {
+        let config = config_with_watcher("/media/tv", false);
+        assert!(config.find_watcher_by_path("/media/movies").is_none());
+    }
+
+    #[test]
+    fn resolve_watcher_by_path_returns_clone_and_resolved() {
+        let config = config_with_watcher("/media/tv", true);
+        let (wc, resolved) = config.resolve_watcher_by_path("/media/tv").unwrap();
+        assert_eq!(wc.path, PathBuf::from("/media/tv"));
+        // With no per-watcher overrides, resolved == global.
+        assert_eq!(resolved, config);
+    }
+
+    #[test]
+    fn resolve_watcher_by_path_returns_none_when_missing() {
+        let config = config_with_watcher("/media/tv", true);
+        assert!(config.resolve_watcher_by_path("/elsewhere").is_none());
+    }
+
+    #[test]
+    fn set_watcher_active_updates_existing() {
+        let mut config = config_with_watcher("/media/tv", false);
+        let updated = config.set_watcher_active("/media/tv", true);
+        assert!(updated);
+        assert!(config.watchers[0].active);
+    }
+
+    #[test]
+    fn set_watcher_active_returns_false_when_missing() {
+        let mut config = config_with_watcher("/media/tv", false);
+        let updated = config.set_watcher_active("/elsewhere", true);
+        assert!(!updated);
+        assert!(!config.watchers[0].active);
     }
 }

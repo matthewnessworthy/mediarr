@@ -74,41 +74,24 @@ pub fn start_watcher(
     watchers: State<'_, ManagedWatchers>,
     path: String,
 ) -> CommandResult<()> {
-    use tauri::Emitter;
+    let (watcher_config, resolved_config) = config
+        .read()
+        .map_err(|_| CommandError::StateLock)?
+        .resolve_watcher_by_path(&path)
+        .ok_or_else(|| CommandError::Other(format!("no watcher configured for path: {path}")))?;
 
-    // Read config to find watcher config and resolve it
-    let (watcher_config, resolved_config) = {
-        let config = config.read().map_err(|_| CommandError::StateLock)?;
-        let wc = config
-            .watchers
-            .iter()
-            .find(|w| w.path.to_string_lossy() == path)
-            .cloned()
-            .ok_or_else(|| {
-                CommandError::Other(format!("no watcher configured for path: {path}"))
-            })?;
-        let resolved = wc.resolve_config(&config);
-        (wc, resolved)
-    };
-
-    // Check if already running (separate lock scope)
+    if watchers
+        .lock()
+        .map_err(|_| CommandError::StateLock)?
+        .contains_key(&path)
     {
-        let watchers = watchers.lock().map_err(|_| CommandError::StateLock)?;
-        if watchers.contains_key(&path) {
-            return Err(CommandError::Other(format!(
-                "watcher already running for path: {path}"
-            )));
-        }
+        return Err(CommandError::Other(format!(
+            "watcher already running for path: {path}"
+        )));
     }
 
     let data_path = mediarr_core::config::default_data_path()
         .map_err(|e| CommandError::Other(format!("failed to determine data path: {e}")))?;
-
-    let app_handle = app.clone();
-    let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
-        Box::new(move |event: &mediarr_core::WatcherEvent| {
-            let _ = app_handle.emit("watcher-event", event);
-        });
 
     let (handle, init_rx) = crate::spawn_watcher_thread(
         resolved_config,
@@ -116,7 +99,7 @@ pub fn start_watcher(
         PathBuf::from(&path),
         watcher_config.mode,
         watcher_config.debounce_seconds,
-        on_event_callback,
+        crate::make_event_callback(&app),
     )
     .map_err(CommandError::Other)?;
 
@@ -127,22 +110,8 @@ pub fn start_watcher(
 
     info!(path = %path, "watcher started and confirmed running");
 
-    // Persist active = true in config
-    {
-        let mut config = config.write().map_err(|_| CommandError::StateLock)?;
-        if let Some(wc) = config
-            .watchers
-            .iter_mut()
-            .find(|w| w.path.to_string_lossy() == path)
-        {
-            wc.active = true;
-        }
-        let config_path = mediarr_core::config::default_config_path()
-            .map_err(|e| CommandError::Other(format!("failed to determine config path: {e}")))?;
-        config.save(&config_path)?;
-    }
+    persist_active_state(&config, &path, true)?;
 
-    // Insert watcher handle
     watchers
         .lock()
         .map_err(|_| CommandError::StateLock)?
@@ -168,24 +137,29 @@ pub fn stop_watcher(
         .remove(&path)
         .ok_or_else(|| CommandError::Other(format!("no running watcher for path: {path}")))?;
 
-    // Send shutdown signal (ignore error if receiver already dropped)
+    // Send shutdown signal (ignore error if receiver already dropped).
     let _ = handle.shutdown_tx.send(true);
 
-    // Persist active = false in config — propagate errors
-    let mut config = config.write().map_err(|_| CommandError::StateLock)?;
-    if let Some(wc) = config
-        .watchers
-        .iter_mut()
-        .find(|w| w.path.to_string_lossy() == path)
-    {
-        wc.active = false;
-    }
-    let config_path = mediarr_core::config::default_config_path()
-        .map_err(|e| CommandError::Other(format!("failed to determine config path: {e}")))?;
-    config.save(&config_path)?;
+    persist_active_state(&config, &path, false)?;
 
     info!(path = %path, "watcher stop signal sent");
 
+    Ok(())
+}
+
+/// Update the `active` flag for the named watcher and persist the config to
+/// disk. Used by both `start_watcher` and `stop_watcher` so the on-disk
+/// state always reflects the running state.
+fn persist_active_state(
+    config: &State<'_, ManagedConfig>,
+    path: &str,
+    active: bool,
+) -> CommandResult<()> {
+    let mut config = config.write().map_err(|_| CommandError::StateLock)?;
+    config.set_watcher_active(path, active);
+    let config_path = mediarr_core::config::default_config_path()
+        .map_err(|e| CommandError::Other(format!("failed to determine config path: {e}")))?;
+    config.save(&config_path)?;
     Ok(())
 }
 

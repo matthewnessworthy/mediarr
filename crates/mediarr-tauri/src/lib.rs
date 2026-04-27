@@ -95,6 +95,19 @@ pub fn run() {
         });
 }
 
+/// Build the per-watcher event callback that forwards mediarr-core
+/// `WatcherEvent`s to the frontend over Tauri's event bus. Used by both
+/// `start_watcher` and `auto_start_watchers`.
+pub(crate) fn make_event_callback(
+    app: &tauri::AppHandle,
+) -> Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> {
+    use tauri::Emitter;
+    let app_handle = app.clone();
+    Box::new(move |event: &mediarr_core::WatcherEvent| {
+        let _ = app_handle.emit("watcher-event", event);
+    })
+}
+
 /// Spawn a watcher on a dedicated OS thread with its own single-threaded tokio runtime.
 ///
 /// Returns the `WatcherHandle` (shutdown channel + thread handle) and an init
@@ -243,15 +256,7 @@ fn start_one_watcher(
     global: &Config,
     data_path: &std::path::Path,
 ) -> std::result::Result<state::WatcherHandle, String> {
-    use tauri::Emitter;
-
     let resolved_config = wc.resolve_config(global);
-
-    let app_handle = app.clone();
-    let on_event_callback: Box<dyn Fn(&mediarr_core::WatcherEvent) + Send> =
-        Box::new(move |event: &mediarr_core::WatcherEvent| {
-            let _ = app_handle.emit("watcher-event", event);
-        });
 
     let (handle, init_rx) = spawn_watcher_thread(
         resolved_config,
@@ -259,7 +264,7 @@ fn start_one_watcher(
         wc.path.clone(),
         wc.mode,
         wc.debounce_seconds,
-        on_event_callback,
+        make_event_callback(app),
     )?;
 
     match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
