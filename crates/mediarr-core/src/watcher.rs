@@ -344,168 +344,163 @@ impl WatcherManager {
 
         info!(filename = %filename, ?mode, "processing watcher event");
 
-        // Scan the file
-        let scan_result = match self.scanner.scan_file(path) {
-            Ok(r) => r,
+        let event = match self.scanner.scan_file(path) {
+            Ok(scan_result) => match mode {
+                WatcherMode::Auto => {
+                    self.handle_auto_mode(scan_result, watch_path, &filename, &timestamp)
+                }
+                WatcherMode::Review => self.handle_review_mode(
+                    scan_result,
+                    watch_path,
+                    &filename,
+                    &timestamp,
+                )?,
+            },
+            Err(e) => WatcherEvent {
+                id: None,
+                timestamp: timestamp.clone(),
+                watch_path: watch_path.to_path_buf(),
+                filename,
+                action: WatcherAction::Error,
+                detail: Some(format!("scan failed: {e}")),
+                batch_id: None,
+            },
+        };
+
+        self.history.log_watcher_event(&event)?;
+        self.notify_event(&event);
+        self.history
+            .prune_watcher_events(watch_path, self.max_activity_events)?;
+        Ok(())
+    }
+
+    /// Auto mode: build a rename plan from the scan result, execute it, and
+    /// return the resulting WatcherEvent (Renamed on full success, Error
+    /// otherwise). History recording failures are logged but do not abort
+    /// — the rename already happened on disk.
+    fn handle_auto_mode(
+        &mut self,
+        scan_result: crate::types::ScanResult,
+        watch_path: &Path,
+        filename: &str,
+        timestamp: &str,
+    ) -> WatcherEvent {
+        // Build rename plan: video + any discovered subtitles.
+        let mut entries = vec![RenamePlanEntry {
+            source_path: scan_result.source_path.clone(),
+            dest_path: scan_result.proposed_path.clone(),
+        }];
+        for sub in &scan_result.subtitles {
+            entries.push(RenamePlanEntry {
+                source_path: sub.source_path.clone(),
+                dest_path: sub.proposed_path.clone(),
+            });
+        }
+
+        let plan = RenamePlan { entries };
+        let results = self.renamer.execute(&plan);
+
+        if !results.iter().all(|r| r.success) {
+            let detail: Vec<String> = results
+                .iter()
+                .filter(|r| !r.success)
+                .filter_map(|r| r.error.clone())
+                .collect();
+            return WatcherEvent {
+                id: None,
+                timestamp: timestamp.to_string(),
+                watch_path: watch_path.to_path_buf(),
+                filename: filename.to_string(),
+                action: WatcherAction::Error,
+                detail: Some(format!("rename failed: {}", detail.join("; "))),
+                batch_id: None,
+            };
+        }
+
+        // Add destinations to the dedup cache so a recursive watcher does
+        // not re-process its own output when output lands inside the
+        // watched folder.
+        let now = Instant::now();
+        for r in &results {
+            let canonical = r
+                .dest_path
+                .canonicalize()
+                .unwrap_or_else(|_| r.dest_path.clone());
+            self.recently_processed.insert(canonical, now);
+        }
+
+        // Record the batch in history. The same media_info applies to every
+        // file in the plan (video + its subtitles).
+        let media_info_map: std::collections::HashMap<String, MediaInfo> = results
+            .iter()
+            .map(|r| {
+                (
+                    r.source_path.to_string_lossy().to_string(),
+                    scan_result.media_info.clone(),
+                )
+            })
+            .collect();
+
+        let batch_id = match self
+            .history
+            .record_rename_results(&results, &media_info_map)
+        {
+            Ok(id) => Some(id).filter(|s| !s.is_empty()),
             Err(e) => {
-                // Log error event but don't crash the watcher
-                let event = WatcherEvent {
-                    id: None,
-                    timestamp,
-                    watch_path: watch_path.to_path_buf(),
-                    filename,
-                    action: WatcherAction::Error,
-                    detail: Some(format!("scan failed: {e}")),
-                    batch_id: None,
-                };
-                self.history.log_watcher_event(&event)?;
-                self.notify_event(&event);
-                self.history
-                    .prune_watcher_events(watch_path, self.max_activity_events)?;
-                return Ok(());
+                warn!(error = %e, "failed to record rename batch in history");
+                None
             }
         };
 
-        match mode {
-            WatcherMode::Auto => {
-                // Build rename plan: video + any discovered subtitles
-                let mut entries = vec![RenamePlanEntry {
-                    source_path: scan_result.source_path.clone(),
-                    dest_path: scan_result.proposed_path.clone(),
-                }];
-
-                // Add subtitle rename entries
-                for sub in &scan_result.subtitles {
-                    entries.push(RenamePlanEntry {
-                        source_path: sub.source_path.clone(),
-                        dest_path: sub.proposed_path.clone(),
-                    });
-                }
-
-                let plan = RenamePlan { entries };
-                let results = self.renamer.execute(&plan);
-
-                // Check if all results are successful
-                let all_success = results.iter().all(|r| r.success);
-
-                if all_success {
-                    // Add all destination paths to the dedup cache so the
-                    // watcher doesn't re-process its own output when watching
-                    // recursively and output lands inside the watched folder.
-                    let now = Instant::now();
-                    for r in &results {
-                        if r.success {
-                            let canonical = r
-                                .dest_path
-                                .canonicalize()
-                                .unwrap_or_else(|_| r.dest_path.clone());
-                            self.recently_processed.insert(canonical, now);
-                        }
-                    }
-
-                    // Record batch in history
-                    let media_info_map: std::collections::HashMap<String, MediaInfo> = results
-                        .iter()
-                        .filter(|r| r.success)
-                        .map(|r| {
-                            (
-                                r.source_path.to_string_lossy().to_string(),
-                                scan_result.media_info.clone(),
-                            )
-                        })
-                        .collect();
-
-                    let batch_id = match self
-                        .history
-                        .record_rename_results(&results, &media_info_map)
-                    {
-                        Ok(id) => Some(id).filter(|s| !s.is_empty()),
-                        Err(e) => {
-                            warn!(error = %e, "failed to record rename batch in history");
-                            None
-                        }
-                    };
-
-                    // Log watcher event
-                    let event = WatcherEvent {
-                        id: None,
-                        timestamp: timestamp.clone(),
-                        watch_path: watch_path.to_path_buf(),
-                        filename,
-                        action: WatcherAction::Renamed,
-                        detail: Some(format!("{}", scan_result.proposed_path.display())),
-                        batch_id,
-                    };
-                    self.history.log_watcher_event(&event)?;
-                    self.notify_event(&event);
-                } else {
-                    // Some renames failed
-                    let errors: Vec<String> = results
-                        .iter()
-                        .filter(|r| !r.success)
-                        .filter_map(|r| r.error.clone())
-                        .collect();
-                    let detail = errors.join("; ");
-
-                    let event = WatcherEvent {
-                        id: None,
-                        timestamp: timestamp.clone(),
-                        watch_path: watch_path.to_path_buf(),
-                        filename,
-                        action: WatcherAction::Error,
-                        detail: Some(format!("rename failed: {detail}")),
-                        batch_id: None,
-                    };
-                    self.history.log_watcher_event(&event)?;
-                    self.notify_event(&event);
-                }
-
-                // Prune old events
-                self.history
-                    .prune_watcher_events(watch_path, self.max_activity_events)?;
-            }
-
-            WatcherMode::Review => {
-                // Serialize media info and subtitles to JSON
-                let media_info_json = serde_json::to_string(&scan_result.media_info)
-                    .unwrap_or_else(|_| "{}".to_string());
-                let subtitles_json = serde_json::to_string(&scan_result.subtitles)
-                    .unwrap_or_else(|_| "[]".to_string());
-
-                // Create review queue entry
-                let entry = ReviewQueueEntry {
-                    id: None,
-                    timestamp: timestamp.clone(),
-                    watch_path: watch_path.to_path_buf(),
-                    source_path: scan_result.source_path.clone(),
-                    proposed_path: scan_result.proposed_path.clone(),
-                    media_info_json,
-                    subtitles_json,
-                    status: ReviewStatus::Pending,
-                };
-
-                self.history.add_to_review_queue(&entry)?;
-
-                // Log watcher event
-                let event = WatcherEvent {
-                    id: None,
-                    timestamp: timestamp.clone(),
-                    watch_path: watch_path.to_path_buf(),
-                    filename,
-                    action: WatcherAction::Queued,
-                    detail: Some(format!("{}", scan_result.proposed_path.display())),
-                    batch_id: None,
-                };
-                self.history.log_watcher_event(&event)?;
-                self.notify_event(&event);
-
-                // Prune old events
-                self.history
-                    .prune_watcher_events(watch_path, self.max_activity_events)?;
-            }
+        WatcherEvent {
+            id: None,
+            timestamp: timestamp.to_string(),
+            watch_path: watch_path.to_path_buf(),
+            filename: filename.to_string(),
+            action: WatcherAction::Renamed,
+            detail: Some(format!("{}", scan_result.proposed_path.display())),
+            batch_id,
         }
+    }
 
-        Ok(())
+    /// Review mode: serialize the scan result into a queue entry for human
+    /// approval and return the corresponding Queued event. Database errors
+    /// from `add_to_review_queue` propagate — losing a queue entry is worse
+    /// than re-processing the file.
+    fn handle_review_mode(
+        &mut self,
+        scan_result: crate::types::ScanResult,
+        watch_path: &Path,
+        filename: &str,
+        timestamp: &str,
+    ) -> Result<WatcherEvent> {
+        let media_info_json =
+            serde_json::to_string(&scan_result.media_info).unwrap_or_else(|_| "{}".to_string());
+        let subtitles_json =
+            serde_json::to_string(&scan_result.subtitles).unwrap_or_else(|_| "[]".to_string());
+
+        let entry = ReviewQueueEntry {
+            id: None,
+            timestamp: timestamp.to_string(),
+            watch_path: watch_path.to_path_buf(),
+            source_path: scan_result.source_path.clone(),
+            proposed_path: scan_result.proposed_path.clone(),
+            media_info_json,
+            subtitles_json,
+            status: ReviewStatus::Pending,
+        };
+
+        self.history.add_to_review_queue(&entry)?;
+
+        Ok(WatcherEvent {
+            id: None,
+            timestamp: timestamp.to_string(),
+            watch_path: watch_path.to_path_buf(),
+            filename: filename.to_string(),
+            action: WatcherAction::Queued,
+            detail: Some(format!("{}", scan_result.proposed_path.display())),
+            batch_id: None,
+        })
     }
 }
 
