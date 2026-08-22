@@ -1029,6 +1029,75 @@ mod tests {
         assert_eq!(strip_duplicate_year_suffix("lioness 2016", None), None);
     }
 
+    // -----------------------------------------------------------------------
+    // restore_bare_season_suffix tests -- a bare single-digit season-like token
+    // at the end of a title is title text, not a season marker.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn bare_season_token_stays_in_folder_title() {
+        let info = parse_filename("Fumetsu no Anata e S3").unwrap();
+        assert_eq!(info.title, "Fumetsu no Anata e S3");
+        assert_eq!(info.season, None);
+    }
+
+    #[test]
+    fn bare_season_token_stays_in_anime_release_title() {
+        let info =
+            parse_filename("[SubsPlease] Fumetsu no Anata e S3 - 01 (1080p) [A1B2C3D4].mkv")
+                .unwrap();
+        assert_eq!(info.title, "Fumetsu no Anata e S3");
+        assert_eq!(info.episodes, vec![1]);
+        // D-A1: no season comes from the bare token, so the pre-existing
+        // "episode present, season missing -> season 1" default applies.
+        assert_eq!(info.season, Some(1));
+    }
+
+    #[test]
+    fn bare_season_token_stays_in_series_title() {
+        let info = parse_filename("Fire Country S2").unwrap();
+        assert_eq!(info.title, "Fire Country S2");
+        assert_eq!(info.season, None);
+    }
+
+    #[test]
+    fn zero_padded_season_token_is_a_real_season() {
+        let info = parse_filename("Show S03").unwrap();
+        assert_eq!(info.title, "Show");
+        assert_eq!(info.season, Some(3));
+    }
+
+    #[test]
+    fn zero_padded_season_token_is_a_real_season_in_anime_release() {
+        let info = parse_filename("[SP] Show S03 - 01 (1080p).mkv").unwrap();
+        assert_eq!(info.title, "Show");
+        assert_eq!(info.season, Some(3));
+        assert_eq!(info.episodes, vec![1]);
+    }
+
+    #[test]
+    fn combined_season_episode_token_is_a_real_season() {
+        let info = parse_filename("Show.s3e01.mkv").unwrap();
+        assert_eq!(info.title, "Show");
+        assert_eq!(info.season, Some(3));
+        assert_eq!(info.episodes, vec![1]);
+    }
+
+    #[test]
+    fn standard_season_episode_filename_is_unaffected() {
+        let info = parse_filename("The.Office.S02E03.720p.BluRay.x264-DEMAND.mkv").unwrap();
+        assert_eq!(info.title, "The Office");
+        assert_eq!(info.season, Some(2));
+        assert_eq!(info.episodes, vec![3]);
+    }
+
+    #[test]
+    fn two_digit_season_token_is_never_bare() {
+        let info = parse_filename("Show S12").unwrap();
+        assert_eq!(info.title, "Show");
+        assert_eq!(info.season, Some(12));
+    }
+
     #[test]
     fn merge_strips_year_suffix_once_folder_supplies_the_year() {
         // hunch's cross-file invariance produces title "lioness 2016" with NO
