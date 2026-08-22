@@ -42,7 +42,7 @@ pub fn parse_with_context(filename: &str, siblings: &[&str]) -> Result<MediaInfo
 /// Map a hunch `HunchResult` into mediarr's `MediaInfo`.
 fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Result<MediaInfo> {
     // Extract title — required field
-    let title = result
+    let mut title = result
         .title()
         .map(|s| s.to_owned())
         .ok_or_else(|| MediError::NoTitle {
@@ -68,6 +68,14 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
 
     // Extract year with safe conversion
     let year = safe_i32_to_u16(result.year(), "year", original_filename);
+
+    // Post-parse normalisation: hunch's cross-file invariance can leave the
+    // year inside the title, which the {year} template variable then renders a
+    // second time.  Runs inside map_hunch_result so parse_filename,
+    // parse_with_context, and Scanner::parse_folder_context all get it.
+    if let Some(stripped) = strip_duplicate_year_suffix(&title, year) {
+        title = stripped;
+    }
 
     // Determine media type and whether it was inferred
     let hunch_media_type = result.media_type();
@@ -128,6 +136,47 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
         language,
         confidence,
     })
+}
+
+/// Drop a trailing year token from a title when it duplicates the parsed year.
+///
+/// Why this exists: hunch's cross-file invariance keeps any token shared by
+/// every sibling in a directory inside the title. For a series folder like
+/// `lioness (2016)` holding `lioness.2016.s03e01.mkv` and
+/// `lioness.2016.s03e02.mkv`, the year is shared by both siblings, so hunch
+/// reports the title as `lioness 2016` while *also* reporting `year = 2016`.
+/// The `{year}` template variable then emits the year a second time
+/// (`Lioness 2016 (2016)`). Patching hunch is out of scope for this project, so
+/// the duplication is undone here, in mediarr's own post-parse normalisation.
+///
+/// Returns `Some(new_title)` only when the title actually changes. The token
+/// must sit at the very tail of the title (optionally wrapped in `()` or `[]`)
+/// and be preceded by a separator, so `Blade Runner 2049` is never touched when
+/// the parsed year is something else, and a title that is nothing but the year
+/// is left alone rather than emptied.
+fn strip_duplicate_year_suffix(title: &str, year: Option<u16>) -> Option<String> {
+    let year = year?;
+    let token = format!("{:04}", year);
+
+    let trimmed = title.trim_end();
+    // Accept the token bare, or wrapped in parentheses / square brackets.
+    let candidates = [format!("({})", token), format!("[{}]", token), token];
+    let head = candidates
+        .iter()
+        .find_map(|candidate| trimmed.strip_suffix(candidate.as_str()))?;
+
+    // The token must be a standalone tail token, not the end of a longer word.
+    let boundary = head.chars().next_back()?;
+    if !matches!(boundary, ' ' | '.' | '_' | '-') {
+        return None;
+    }
+
+    let remainder = head.trim_end_matches([' ', '.', '_', '-']).trim();
+    if remainder.is_empty() {
+        return None;
+    }
+
+    Some(remainder.to_owned())
 }
 
 /// Safely convert an `Option<i32>` to `Option<u16>`, logging a warning on overflow/negative.
@@ -339,6 +388,15 @@ pub fn merge_folder_context(
         }
     } else if folder.year.is_some() && folder.confidence.is_higher_than(&file_info.confidence) {
         file_info.year = folder.year;
+    }
+
+    // Re-run the year-duplication strip now that the folder may have supplied a
+    // year the file-level parse lacked.  When hunch's cross-file invariance
+    // glues a sibling-shared year into the title it also reports no year at
+    // all, so `map_hunch_result` has nothing to compare against; the parent
+    // folder (`lioness (2016)`) is what fills the gap.
+    if let Some(stripped) = strip_duplicate_year_suffix(&file_info.title, file_info.year) {
+        file_info.title = stripped;
     }
 
     // D-07/D-08: Missing episode after season inheritance
@@ -969,5 +1027,33 @@ mod tests {
     #[test]
     fn strip_year_suffix_requires_a_parsed_year() {
         assert_eq!(strip_duplicate_year_suffix("lioness 2016", None), None);
+    }
+
+    #[test]
+    fn merge_strips_year_suffix_once_folder_supplies_the_year() {
+        // hunch's cross-file invariance produces title "lioness 2016" with NO
+        // year for the file itself; the parent folder "lioness (2016)" is what
+        // fills the year gap, so the strip has to run again after the merge.
+        let file = MediaInfo {
+            title: "lioness 2016".into(),
+            media_type: MediaType::Series,
+            season: Some(3),
+            episodes: vec![1],
+            confidence: ParseConfidence::High,
+            ..Default::default()
+        };
+        let folder_parent = MediaInfo {
+            title: "lioness".into(),
+            year: Some(2016),
+            confidence: ParseConfidence::High,
+            ..Default::default()
+        };
+        let ctx = FolderContext {
+            parent: Some(folder_parent),
+            grandparent: None,
+        };
+        let (result, _) = merge_folder_context(file, &ctx);
+        assert_eq!(result.title, "lioness");
+        assert_eq!(result.year, Some(2016));
     }
 }
