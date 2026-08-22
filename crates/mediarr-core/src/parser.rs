@@ -112,6 +112,15 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
         .map(|s| s.to_owned())
         .unwrap_or_else(|| extract_extension(original_filename));
 
+    // Post-parse normalisation: a bare single-digit season-like token at the
+    // tail of the title ("Fumetsu no Anata e S3") is part of the show's name,
+    // not a season marker.  Restoring it clears the season, so an
+    // episode-bearing filename falls through to the default below (D-A1).
+    let (title, season) = match restore_bare_season_suffix(&title, season, original_filename) {
+        Some(restored) => (restored, None),
+        None => (title, season),
+    };
+
     // Default season to 1 for Series when episodes are present but season
     // is missing.  Files like "Show.E05.mkv" omit the season prefix; treating
     // them as season 1 prevents the template from producing "SE05" instead of
@@ -177,6 +186,91 @@ fn strip_duplicate_year_suffix(title: &str, year: Option<u16>) -> Option<String>
     }
 
     Some(remainder.to_owned())
+}
+
+/// Put a bare single-digit season-like token back into the title.
+///
+/// Series whose *name* ends in something like `S3` (`Fumetsu no Anata e S3`,
+/// `Fire Country S2`) lose that token to hunch, which reads it as a season
+/// marker and strips it from the title. The show then loses its name, and the
+/// renamer nests the file one level deeper because the folder no longer looks
+/// equivalent to the rendered template folder.
+///
+/// Only the *bare single-digit* form is treated as title text. `S03` (zero
+/// padded), `s3e01` / `S03E01` (combined), `3x01`, and any two-or-more digit
+/// season are deliberately left alone as genuine season markers — the padding
+/// or the episode pairing is what signals intent.
+///
+/// Returns `Some(new_title)` when the token belongs to the title, in which case
+/// the caller must also clear the season. Per decision D-A1 the bare token
+/// yields *no* season at all, so an episode-bearing filename falls through to
+/// the pre-existing "episode present, season missing -> season 1" default.
+fn restore_bare_season_suffix(
+    title: &str,
+    season: Option<u16>,
+    original: &str,
+) -> Option<String> {
+    // Two-or-more-digit seasons are never bare.
+    let n = season.filter(|n| (1..=9).contains(n))?;
+    let digit = char::from_digit(u32::from(n), 10)?;
+
+    let bytes = original.as_bytes();
+    for (idx, ch) in original.char_indices() {
+        if !ch.eq_ignore_ascii_case(&'s') {
+            continue;
+        }
+        // Preceded by start-of-string or a separator.
+        let preceded_ok = original[..idx]
+            .chars()
+            .next_back()
+            .is_none_or(|p| matches!(p, ' ' | '.' | '_' | '-'));
+        if !preceded_ok {
+            continue;
+        }
+        // Followed by exactly the season digit.
+        if bytes.get(idx + 1) != Some(&(digit as u8)) {
+            continue;
+        }
+        // Reject `s30` (more digits), `s3e01` (episode pairing), `s3x01`.
+        match bytes.get(idx + 2) {
+            Some(&c) if c.is_ascii_digit() => continue,
+            Some(&c) if matches!(c, b'e' | b'E' | b'x' | b'X') => {
+                if bytes.get(idx + 3).is_some_and(u8::is_ascii_digit) {
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        // The token must sit at the tail of the title region: everything before
+        // it, normalised, has to be exactly the title hunch extracted.
+        if normalize_title_region(&original[..idx]).eq_ignore_ascii_case(title) {
+            let token = &original[idx..idx + 2];
+            return Some(format!("{} {}", title, token));
+        }
+    }
+
+    None
+}
+
+/// Normalise the slice of a filename preceding a candidate season token so it
+/// can be compared against the title hunch extracted.
+///
+/// Drops a leading bracketed or parenthesised group (fansub tag), turns `.`
+/// and `_` separators into spaces, and collapses runs of whitespace.
+fn normalize_title_region(region: &str) -> String {
+    let mut s = region.trim();
+
+    // Drop a leading fansub tag such as "[SubsPlease] " or "(Group) ".
+    if let Some(rest) = s.strip_prefix('[').and_then(|r| r.split_once(']')) {
+        s = rest.1;
+    } else if let Some(rest) = s.strip_prefix('(').and_then(|r| r.split_once(')')) {
+        s = rest.1;
+    }
+
+    s.replace(['.', '_'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Safely convert an `Option<i32>` to `Option<u16>`, logging a warning on overflow/negative.

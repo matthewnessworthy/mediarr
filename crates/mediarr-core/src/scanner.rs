@@ -1299,11 +1299,13 @@ mod tests {
 
     #[test]
     fn scan_folder_inherits_season_from_parent_dir() {
-        // Series folder: "Fire Country S2/Fire.Country.720p.mkv"
-        // File has no season or episode -> season gap-filled from folder
+        // Series folder: "Fire Country S02/Fire.Country.720p.mkv"
+        // File has no season or episode -> season gap-filled from folder.
+        // The season marker is zero-padded because a bare "S2" is title text
+        // (see restore_bare_season_suffix / D-A1), not a season.
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();
-        let series_dir = source.path().join("Fire Country S2");
+        let series_dir = source.path().join("Fire Country S02");
         fs::create_dir(&series_dir).unwrap();
         // Use a filename without episode marker so hunch doesn't infer season=1
         fs::write(series_dir.join("Fire.Country.720p.mkv"), b"ep1").unwrap();
@@ -1314,7 +1316,7 @@ mod tests {
         assert_eq!(
             results[0].media_info.season,
             Some(2),
-            "season should be gap-filled from parent folder 'Fire Country S2'"
+            "season should be gap-filled from parent folder 'Fire Country S02'"
         );
     }
 
@@ -1370,10 +1372,12 @@ mod tests {
 
     #[test]
     fn scan_folder_movie_promoted_to_series_when_folder_has_season() {
-        // D-05: Movie file in folder with season -> promoted to Series
+        // D-05: Movie file in folder with season -> promoted to Series.
+        // Season marker zero-padded: a bare "S2" is title text, not a season
+        // (see restore_bare_season_suffix / D-A1).
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();
-        let series_dir = source.path().join("Fire Country S2");
+        let series_dir = source.path().join("Fire Country S02");
         fs::create_dir(&series_dir).unwrap();
         // A filename that hunch would parse as Movie (year, no season/episode)
         fs::write(series_dir.join("Fire.Country.2024.mkv"), b"ep").unwrap();
@@ -1401,10 +1405,12 @@ mod tests {
 
     #[test]
     fn scan_file_inherits_season_from_parent_dir() {
-        // File has no season -> gap-filled from folder "Fire Country S2"
+        // File has no season -> gap-filled from folder "Fire Country S02".
+        // Season marker zero-padded: a bare "S2" is title text, not a season
+        // (see restore_bare_season_suffix / D-A1).
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();
-        let series_dir = source.path().join("Fire Country S2");
+        let series_dir = source.path().join("Fire Country S02");
         fs::create_dir(&series_dir).unwrap();
         let video = series_dir.join("Fire.Country.720p.mkv");
         fs::write(&video, b"ep1").unwrap();
@@ -1414,16 +1420,18 @@ mod tests {
         assert_eq!(
             result.media_info.season,
             Some(2),
-            "season should be gap-filled from parent folder 'Fire Country S2'"
+            "season should be gap-filled from parent folder 'Fire Country S02'"
         );
     }
 
     #[test]
     fn scan_file_flags_missing_episode_after_season_inheritance() {
-        // D-07/D-08: season from folder, no episode in filename
+        // D-07/D-08: season from folder "Fire Country S02", no episode in
+        // filename. Season marker zero-padded: a bare "S2" is title text, not a
+        // season (see restore_bare_season_suffix / D-A1).
         let source = TempDir::new().unwrap();
         let output = TempDir::new().unwrap();
-        let series_dir = source.path().join("Fire Country S2");
+        let series_dir = source.path().join("Fire Country S02");
         fs::create_dir(&series_dir).unwrap();
         // Filename with no episode marker that hunch won't detect as episode
         let video = series_dir.join("Fire.Country.mkv");
