@@ -926,4 +926,48 @@ mod tests {
         let (result, _) = merge_folder_context(file, &ctx);
         assert_eq!(result.title, "My Show");
     }
+
+    // -----------------------------------------------------------------------
+    // strip_duplicate_year_suffix tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn strip_year_suffix_space_separated() {
+        assert_eq!(
+            strip_duplicate_year_suffix("lioness 2016", Some(2016)).as_deref(),
+            Some("lioness")
+        );
+    }
+
+    #[test]
+    fn strip_year_suffix_dot_separated() {
+        assert_eq!(
+            strip_duplicate_year_suffix("lioness.2016", Some(2016)).as_deref(),
+            Some("lioness")
+        );
+    }
+
+    #[test]
+    fn strip_year_suffix_ignores_non_matching_trailing_number() {
+        // "Blade Runner 2049" with year 2017 -- 2049 is part of the title.
+        assert_eq!(
+            strip_duplicate_year_suffix("Blade Runner 2049", Some(2017)),
+            None
+        );
+    }
+
+    #[test]
+    fn strip_year_suffix_refuses_to_empty_the_title() {
+        assert_eq!(strip_duplicate_year_suffix("2016", Some(2016)), None);
+    }
+
+    #[test]
+    fn strip_year_suffix_no_trailing_year_token() {
+        assert_eq!(strip_duplicate_year_suffix("lioness", Some(2016)), None);
+    }
+
+    #[test]
+    fn strip_year_suffix_requires_a_parsed_year() {
+        assert_eq!(strip_duplicate_year_suffix("lioness 2016", None), None);
+    }
 }
