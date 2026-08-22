@@ -85,3 +85,78 @@ fn scan_folder_series_proposed_path_renders_year_once() {
     assert_eq!(folder, "Lioness (2016)");
     assert_eq!(file, "Lioness (2016) - S03E01.mkv");
 }
+
+// ---------------------------------------------------------------------------
+// Bug A -- bare single-digit season-like token at the end of a series name
+// ---------------------------------------------------------------------------
+
+const FUMETSU_FOLDER: &str = "Fumetsu no Anata e S3";
+const FUMETSU_E01: &str = "[SubsPlease] Fumetsu no Anata e S3 - 01 (1080p) [A1B2C3D4].mkv";
+const FUMETSU_E02: &str = "[SubsPlease] Fumetsu no Anata e S3 - 02 (1080p) [E5F6A7B8].mkv";
+
+/// Build `<tmp>/Fumetsu no Anata e S3/{episode 01, episode 02}`.
+fn fumetsu_fixture() -> TempDir {
+    let source = TempDir::new().unwrap();
+    let series_dir = source.path().join(FUMETSU_FOLDER);
+    fs::create_dir(&series_dir).unwrap();
+    fs::write(series_dir.join(FUMETSU_E01), b"ep1").unwrap();
+    fs::write(series_dir.join(FUMETSU_E02), b"ep2").unwrap();
+    source
+}
+
+#[test]
+fn scan_folder_keeps_bare_season_token_in_series_title() {
+    let source = fumetsu_fixture();
+
+    let scanner = Scanner::new(Config::default()); // in-place mode
+    let results = scanner.scan_folder(source.path()).unwrap();
+    assert_eq!(results.len(), 2, "both sibling episodes should be scanned");
+
+    let e01 = results
+        .iter()
+        .find(|r| r.source_path.file_name().unwrap() == FUMETSU_E01)
+        .expect("episode 01 result");
+
+    assert_eq!(
+        e01.media_info.title, "Fumetsu no Anata e S3",
+        "the bare 'S3' token belongs to the show's name"
+    );
+    assert_eq!(e01.media_info.episodes, vec![1]);
+    // D-A1: the bare token yields no season, so the pre-existing
+    // "episode present, season missing -> season 1" default applies.
+    assert_eq!(e01.media_info.season, Some(1));
+}
+
+#[test]
+fn scan_folder_bare_season_token_renames_in_place_without_renesting() {
+    let source = fumetsu_fixture();
+
+    let scanner = Scanner::new(Config::default());
+    let results = scanner.scan_folder(source.path()).unwrap();
+
+    let e01 = results
+        .iter()
+        .find(|r| r.source_path.file_name().unwrap() == FUMETSU_E01)
+        .expect("episode 01 result");
+
+    // The folder component proves the raw-string arm of in_place_proposed_path
+    // matches once the title is correct: the file is renamed inside its
+    // existing directory rather than nested one level deeper.
+    let (folder, file) = last_two_components(&e01.proposed_path);
+    assert_eq!(folder, "Fumetsu no Anata e S3");
+    assert_eq!(file, "Fumetsu no Anata e S3 - S01E01.mkv");
+}
+
+#[test]
+fn scan_file_keeps_bare_season_token_in_series_title() {
+    // The watcher enters through scan_file, not scan_folder.
+    let source = fumetsu_fixture();
+    let video = source.path().join(FUMETSU_FOLDER).join(FUMETSU_E01);
+
+    let scanner = Scanner::new(Config::default());
+    let r = scanner.scan_file(&video).unwrap();
+
+    assert_eq!(r.media_info.title, "Fumetsu no Anata e S3");
+    assert_eq!(r.media_info.episodes, vec![1]);
+    assert_eq!(r.media_info.season, Some(1));
+}

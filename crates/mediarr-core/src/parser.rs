@@ -205,11 +205,7 @@ fn strip_duplicate_year_suffix(title: &str, year: Option<u16>) -> Option<String>
 /// the caller must also clear the season. Per decision D-A1 the bare token
 /// yields *no* season at all, so an episode-bearing filename falls through to
 /// the pre-existing "episode present, season missing -> season 1" default.
-fn restore_bare_season_suffix(
-    title: &str,
-    season: Option<u16>,
-    original: &str,
-) -> Option<String> {
+fn restore_bare_season_suffix(title: &str, season: Option<u16>, original: &str) -> Option<String> {
     // Two-or-more-digit seasons are never bare.
     let n = season.filter(|n| (1..=9).contains(n))?;
     let digit = char::from_digit(u32::from(n), 10)?;
@@ -234,7 +230,7 @@ fn restore_bare_season_suffix(
         // Reject `s30` (more digits), `s3e01` (episode pairing), `s3x01`.
         match bytes.get(idx + 2) {
             Some(&c) if c.is_ascii_digit() => continue,
-            Some(&c) if matches!(c, b'e' | b'E' | b'x' | b'X') => {
+            Some(&(b'e' | b'E' | b'x' | b'X')) => {
                 if bytes.get(idx + 3).is_some_and(u8::is_ascii_digit) {
                     continue;
                 }
@@ -1137,9 +1133,8 @@ mod tests {
 
     #[test]
     fn bare_season_token_stays_in_anime_release_title() {
-        let info =
-            parse_filename("[SubsPlease] Fumetsu no Anata e S3 - 01 (1080p) [A1B2C3D4].mkv")
-                .unwrap();
+        let info = parse_filename("[SubsPlease] Fumetsu no Anata e S3 - 01 (1080p) [A1B2C3D4].mkv")
+            .unwrap();
         assert_eq!(info.title, "Fumetsu no Anata e S3");
         assert_eq!(info.episodes, vec![1]);
         // D-A1: no season comes from the bare token, so the pre-existing
