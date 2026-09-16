@@ -226,8 +226,7 @@ impl Renamer {
                 RenameOperation::Copy => {
                     match std::fs::copy(&entry.source_path, &effective_dest) {
                         Ok(_) => {
-                            if let Err(error_msg) =
-                                verify_copy(&entry.source_path, &effective_dest)
+                            if let Err(error_msg) = verify_copy(&entry.source_path, &effective_dest)
                             {
                                 results.push(RenameResult {
                                     source_path: entry.source_path.clone(),

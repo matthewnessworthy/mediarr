@@ -349,12 +349,9 @@ impl WatcherManager {
                 WatcherMode::Auto => {
                     self.handle_auto_mode(scan_result, watch_path, &filename, &timestamp)
                 }
-                WatcherMode::Review => self.handle_review_mode(
-                    scan_result,
-                    watch_path,
-                    &filename,
-                    &timestamp,
-                )?,
+                WatcherMode::Review => {
+                    self.handle_review_mode(scan_result, watch_path, &filename, &timestamp)?
+                }
             },
             Err(e) => WatcherEvent {
                 id: None,
