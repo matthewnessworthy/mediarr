@@ -230,10 +230,10 @@ fn restore_bare_season_suffix(title: &str, season: Option<u16>, original: &str) 
         // Reject `s30` (more digits), `s3e01` (episode pairing), `s3x01`.
         match bytes.get(idx + 2) {
             Some(&c) if c.is_ascii_digit() => continue,
-            Some(&(b'e' | b'E' | b'x' | b'X')) => {
-                if bytes.get(idx + 3).is_some_and(u8::is_ascii_digit) {
-                    continue;
-                }
+            Some(&(b'e' | b'E' | b'x' | b'X'))
+                if bytes.get(idx + 3).is_some_and(u8::is_ascii_digit) =>
+            {
+                continue;
             }
             _ => {}
         }
