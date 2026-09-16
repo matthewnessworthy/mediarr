@@ -88,7 +88,7 @@ fn map_hunch_result(result: &hunch::HunchResult, original_filename: &str) -> Res
             (MediaType::Series, false)
         }
         Some(hunch::MediaType::Extra) => (MediaType::Series, false),
-        None => {
+        _ => {
             let (inferred_type, _) =
                 infer_type_from_fields(season.is_some(), !episodes.is_empty(), year.is_some());
             (inferred_type, true)
@@ -307,6 +307,7 @@ fn map_confidence(hunch_confidence: hunch::Confidence, type_was_inferred: bool) 
         hunch::Confidence::High => ParseConfidence::High,
         hunch::Confidence::Medium => ParseConfidence::Medium,
         hunch::Confidence::Low => ParseConfidence::Low,
+        _ => ParseConfidence::Low,
     };
 
     // Downgrade High -> Medium if type was inferred (not from hunch)

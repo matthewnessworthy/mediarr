@@ -29,7 +29,7 @@ impl OutputFormatter {
     /// Display scan results as a table with STATUS, TYPE, TITLE, PROPOSED PATH columns.
     pub fn scan_table(&self, results: &[ScanResult]) {
         let mut table = Table::new();
-        table.load_preset(presets::UTF8_FULL_CONDENSED);
+        table.load_style(presets::UTF8_FULL_CONDENSED);
         table.set_header(vec!["STATUS", "TYPE", "TITLE", "PROPOSED PATH"]);
 
         for r in results {
@@ -91,7 +91,7 @@ impl OutputFormatter {
     /// Display history batches as a table.
     pub fn history_table(&self, batches: &[BatchSummary]) {
         let mut table = Table::new();
-        table.load_preset(presets::UTF8_FULL_CONDENSED);
+        table.load_style(presets::UTF8_FULL_CONDENSED);
         table.set_header(vec!["BATCH ID", "TIMESTAMP", "FILES", "TITLE"]);
 
         for b in batches {
